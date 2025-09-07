@@ -30,7 +30,7 @@ export const ENTRANCE_ROOM_TEMPLATES: RoomTemplate[] = [
     height: 4,
     connectionPoints: [
       { direction: ExitDirection.North, position: { x: 3, y: 0 } },
-      { direction: ExitDirection.South, position: { x: 3, y: 4 } },
+      { direction: ExitDirection.South, position: { x: 3, y: 3 } },
     ],
     gridPattern: createGridPattern(6, 4, [
       '######',
@@ -49,7 +49,7 @@ export const ENTRANCE_ROOM_TEMPLATES: RoomTemplate[] = [
     height: 5,
     connectionPoints: [
       { direction: ExitDirection.North, position: { x: 3, y: 0 } },
-      { direction: ExitDirection.East, position: { x: 7, y: 2 } },
+      { direction: ExitDirection.East, position: { x: 6, y: 2 } },
       { direction: ExitDirection.West, position: { x: 0, y: 2 } },
     ],
     gridPattern: createGridPattern(7, 5, [
@@ -70,8 +70,8 @@ export const ENTRANCE_ROOM_TEMPLATES: RoomTemplate[] = [
     height: 6,
     connectionPoints: [
       { direction: ExitDirection.North, position: { x: 2, y: 0 } },
-      { direction: ExitDirection.East, position: { x: 6, y: 3 } },
-      { direction: ExitDirection.South, position: { x: 5, y: 6 } },
+      { direction: ExitDirection.East, position: { x: 5, y: 3 } },
+      { direction: ExitDirection.South, position: { x: 5, y: 5 } },
     ],
     gridPattern: createGridPattern(6, 6, [
       '####  ',
@@ -96,8 +96,8 @@ export const STANDARD_ROOM_TEMPLATES: RoomTemplate[] = [
     height: 4,
     connectionPoints: [
       { direction: ExitDirection.North, position: { x: 2, y: 0 } },
-      { direction: ExitDirection.South, position: { x: 2, y: 4 } },
-      { direction: ExitDirection.East, position: { x: 4, y: 2 } },
+      { direction: ExitDirection.South, position: { x: 2, y: 3 } },
+      { direction: ExitDirection.East, position: { x: 3, y: 2 } },
       { direction: ExitDirection.West, position: { x: 0, y: 2 } },
     ],
     gridPattern: createGridPattern(4, 4, [
@@ -117,8 +117,8 @@ export const STANDARD_ROOM_TEMPLATES: RoomTemplate[] = [
     height: 4,
     connectionPoints: [
       { direction: ExitDirection.North, position: { x: 3, y: 0 } },
-      { direction: ExitDirection.South, position: { x: 3, y: 4 } },
-      { direction: ExitDirection.East, position: { x: 6, y: 2 } },
+      { direction: ExitDirection.South, position: { x: 3, y: 3 } },
+      { direction: ExitDirection.East, position: { x: 5, y: 2 } },
       { direction: ExitDirection.West, position: { x: 0, y: 2 } },
     ],
     gridPattern: createGridPattern(6, 4, [
@@ -138,8 +138,8 @@ export const STANDARD_ROOM_TEMPLATES: RoomTemplate[] = [
     height: 5,
     connectionPoints: [
       { direction: ExitDirection.North, position: { x: 2, y: 0 } },
-      { direction: ExitDirection.South, position: { x: 2, y: 5 } },
-      { direction: ExitDirection.East, position: { x: 5, y: 2 } },
+      { direction: ExitDirection.South, position: { x: 2, y: 4 } },
+      { direction: ExitDirection.East, position: { x: 4, y: 2 } },
       { direction: ExitDirection.West, position: { x: 0, y: 2 } },
     ],
     gridPattern: createGridPattern(5, 5, [
@@ -160,8 +160,8 @@ export const STANDARD_ROOM_TEMPLATES: RoomTemplate[] = [
     height: 6,
     connectionPoints: [
       { direction: ExitDirection.North, position: { x: 2, y: 0 } },
-      { direction: ExitDirection.East, position: { x: 6, y: 4 } },
-      { direction: ExitDirection.South, position: { x: 5, y: 6 } },
+      { direction: ExitDirection.East, position: { x: 5, y: 4 } },
+      { direction: ExitDirection.South, position: { x: 5, y: 5 } },
       { direction: ExitDirection.West, position: { x: 0, y: 1 } },
     ],
     gridPattern: createGridPattern(6, 6, [
@@ -183,8 +183,8 @@ export const STANDARD_ROOM_TEMPLATES: RoomTemplate[] = [
     height: 5,
     connectionPoints: [
       { direction: ExitDirection.North, position: { x: 3, y: 0 } },
-      { direction: ExitDirection.South, position: { x: 3, y: 5 } },
-      { direction: ExitDirection.East, position: { x: 7, y: 2 } },
+      { direction: ExitDirection.South, position: { x: 3, y: 4 } },
+      { direction: ExitDirection.East, position: { x: 6, y: 2 } },
       { direction: ExitDirection.West, position: { x: 0, y: 2 } },
     ],
     gridPattern: createGridPattern(7, 5, [
@@ -205,8 +205,8 @@ export const STANDARD_ROOM_TEMPLATES: RoomTemplate[] = [
     height: 7,
     connectionPoints: [
       { direction: ExitDirection.North, position: { x: 3, y: 0 } },
-      { direction: ExitDirection.South, position: { x: 3, y: 7 } },
-      { direction: ExitDirection.East, position: { x: 7, y: 3 } },
+      { direction: ExitDirection.South, position: { x: 3, y: 6 } },
+      { direction: ExitDirection.East, position: { x: 6, y: 3 } },
       { direction: ExitDirection.West, position: { x: 0, y: 3 } },
     ],
     gridPattern: createGridPattern(7, 7, [
@@ -229,8 +229,8 @@ export const STANDARD_ROOM_TEMPLATES: RoomTemplate[] = [
     height: 6,
     connectionPoints: [
       { direction: ExitDirection.North, position: { x: 3, y: 0 } },
-      { direction: ExitDirection.South, position: { x: 3, y: 6 } },
-      { direction: ExitDirection.East, position: { x: 6, y: 3 } },
+      { direction: ExitDirection.South, position: { x: 3, y: 5 } },
+      { direction: ExitDirection.East, position: { x: 5, y: 3 } },
       { direction: ExitDirection.West, position: { x: 0, y: 3 } },
     ],
     gridPattern: createGridPattern(6, 6, [
@@ -256,8 +256,8 @@ export const JUNCTION_ROOM_TEMPLATES: RoomTemplate[] = [
     height: 3,
     connectionPoints: [
       { direction: ExitDirection.North, position: { x: 1, y: 0 } },
-      { direction: ExitDirection.South, position: { x: 1, y: 3 } },
-      { direction: ExitDirection.East, position: { x: 3, y: 1 } },
+      { direction: ExitDirection.South, position: { x: 1, y: 2 } },
+      { direction: ExitDirection.East, position: { x: 2, y: 1 } },
       { direction: ExitDirection.West, position: { x: 0, y: 1 } },
     ],
     gridPattern: createGridPattern(3, 3, [
@@ -276,7 +276,7 @@ export const JUNCTION_ROOM_TEMPLATES: RoomTemplate[] = [
     height: 3,
     connectionPoints: [
       { direction: ExitDirection.North, position: { x: 1, y: 0 } },
-      { direction: ExitDirection.East, position: { x: 3, y: 1 } },
+      { direction: ExitDirection.East, position: { x: 2, y: 1 } },
       { direction: ExitDirection.West, position: { x: 0, y: 1 } },
     ],
     gridPattern: createGridPattern(3, 3, [
