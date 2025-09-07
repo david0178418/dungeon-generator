@@ -34,13 +34,6 @@ export enum ExitDirection {
   Southwest = 'southwest',
 }
 
-export enum ConnectionType {
-  Door = 'door',
-  Archway = 'archway',
-  Corridor = 'corridor',
-  SecretDoor = 'secret-door',
-  None = 'none',
-}
 
 export enum CorridorType {
   Straight = 'straight',

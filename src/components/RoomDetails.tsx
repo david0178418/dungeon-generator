@@ -9,7 +9,7 @@ import {
   ListItemText,
   Divider,
 } from '@mui/material';
-import { Room, DungeonMap, ExitDirection, ConnectionType } from '../types';
+import { Room, DungeonMap, ExitDirection } from '../types';
 
 interface RoomDetailsProps {
   room: Room | null;
@@ -49,15 +49,6 @@ export const RoomDetails: React.FC<RoomDetailsProps> = ({ room, dungeonMap }) =>
     }
   };
 
-  const getConnectionTypeColor = (type: ConnectionType): "default" | "primary" | "secondary" | "error" | "info" | "success" | "warning" => {
-    switch (type) {
-      case ConnectionType.Door: return 'primary';
-      case ConnectionType.Archway: return 'info';
-      case ConnectionType.Corridor: return 'default';
-      case ConnectionType.SecretDoor: return 'warning';
-      default: return 'default';
-    }
-  };
 
   const formatRoomShape = (shape: string): string => {
     return shape.split('-').map(word => 

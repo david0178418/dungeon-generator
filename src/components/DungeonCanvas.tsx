@@ -68,88 +68,9 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
     }
 
     // Add doors (connection points as rectangles)
-    const doors = room.connectionPoints?.map((cp, index) => {
-      // Calculate door position centered on the edge of the specific grid cell
-      let doorWidth, doorHeight, doorX, doorY;
-      
-      // Get the cell position
-      const cellX = cp.position.x * gridSquareSize;
-      const cellY = cp.position.y * gridSquareSize;
-      
-      switch (cp.direction) {
-        case 'north':
-          // Door centered on top edge of the cell
-          doorWidth = gridSquareSize * 0.6;
-          doorHeight = gridSquareSize * 0.2;
-          doorX = cellX + (gridSquareSize - doorWidth) / 2;
-          doorY = cellY - doorHeight / 2;
-          break;
-        case 'south':
-          // Door centered on bottom edge of the cell
-          doorWidth = gridSquareSize * 0.6;
-          doorHeight = gridSquareSize * 0.2;
-          doorX = cellX + (gridSquareSize - doorWidth) / 2;
-          doorY = cellY + gridSquareSize - doorHeight / 2;
-          break;
-        case 'east':
-          // Door centered on right edge of the cell
-          doorWidth = gridSquareSize * 0.2;
-          doorHeight = gridSquareSize * 0.6;
-          doorX = cellX + gridSquareSize - doorWidth / 2;
-          doorY = cellY + (gridSquareSize - doorHeight) / 2;
-          break;
-        case 'west':
-          // Door centered on left edge of the cell
-          doorWidth = gridSquareSize * 0.2;
-          doorHeight = gridSquareSize * 0.6;
-          doorX = cellX - doorWidth / 2;
-          doorY = cellY + (gridSquareSize - doorHeight) / 2;
-          break;
-        default:
-          // Default centered door
-          doorWidth = gridSquareSize * 0.3;
-          doorHeight = gridSquareSize * 0.3;
-          doorX = cellX + (gridSquareSize - doorWidth) / 2;
-          doorY = cellY + (gridSquareSize - doorHeight) / 2;
-      }
-
-      // Create door with appropriate styling
-      const doorElements = [];
-      
-      // Main door opening (white fill)
-      doorElements.push(
-        <rect
-          key={`${room.id}-door-${index}`}
-          x={doorX}
-          y={doorY}
-          width={doorWidth}
-          height={doorHeight}
-          fill="#fff"
-          stroke="#000"
-          strokeWidth={1.5}
-        />
-      );
-      
-      // If unexplored (not connected), add visual indicator
-      if (!cp.isConnected) {
-        // Add a subtle pattern or different styling for unexplored doors
-        doorElements.push(
-          <rect
-            key={`${room.id}-door-unexplored-${index}`}
-            x={doorX + 1}
-            y={doorY + 1}
-            width={doorWidth - 2}
-            height={doorHeight - 2}
-            fill="none"
-            stroke="#999"
-            strokeWidth={1}
-            strokeDasharray="2,2"
-          />
-        );
-      }
-      
-      return <g key={`${room.id}-door-group-${index}`}>{doorElements}</g>;
-    }) || [];
+    const doors = room.connectionPoints?.map((cp, index) => 
+      renderDoor(room.id, cp, index, gridSquareSize)
+    ) || [];
 
     // Add room number
     const centerX = x + (room.width * gridSquareSize) / 2;
@@ -173,6 +94,89 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
         </text>
       </g>
     );
+  };
+
+  const renderDoor = (roomId: string, cp: any, index: number, gridSquareSize: number) => {
+    // Calculate door position centered on the edge of the specific grid cell
+    let doorWidth, doorHeight, doorX, doorY;
+    
+    // Get the cell position
+    const cellX = cp.position.x * gridSquareSize;
+    const cellY = cp.position.y * gridSquareSize;
+    
+    switch (cp.direction) {
+      case 'north':
+        // Door centered on top edge of the cell
+        doorWidth = gridSquareSize * 0.6;
+        doorHeight = gridSquareSize * 0.2;
+        doorX = cellX + (gridSquareSize - doorWidth) / 2;
+        doorY = cellY - doorHeight / 2;
+        break;
+      case 'south':
+        // Door centered on bottom edge of the cell
+        doorWidth = gridSquareSize * 0.6;
+        doorHeight = gridSquareSize * 0.2;
+        doorX = cellX + (gridSquareSize - doorWidth) / 2;
+        doorY = cellY + gridSquareSize - doorHeight / 2;
+        break;
+      case 'east':
+        // Door centered on right edge of the cell
+        doorWidth = gridSquareSize * 0.2;
+        doorHeight = gridSquareSize * 0.6;
+        doorX = cellX + gridSquareSize - doorWidth / 2;
+        doorY = cellY + (gridSquareSize - doorHeight) / 2;
+        break;
+      case 'west':
+        // Door centered on left edge of the cell
+        doorWidth = gridSquareSize * 0.2;
+        doorHeight = gridSquareSize * 0.6;
+        doorX = cellX - doorWidth / 2;
+        doorY = cellY + (gridSquareSize - doorHeight) / 2;
+        break;
+      default:
+        // Default centered door
+        doorWidth = gridSquareSize * 0.3;
+        doorHeight = gridSquareSize * 0.3;
+        doorX = cellX + (gridSquareSize - doorWidth) / 2;
+        doorY = cellY + (gridSquareSize - doorHeight) / 2;
+    }
+
+    // Create door with appropriate styling
+    const doorElements = [];
+    
+    // Main door opening (white fill)
+    doorElements.push(
+      <rect
+        key={`${roomId}-door-${index}`}
+        x={doorX}
+        y={doorY}
+        width={doorWidth}
+        height={doorHeight}
+        fill="#fff"
+        stroke="#000"
+        strokeWidth={1.5}
+      />
+    );
+    
+    // If unexplored (not connected), add visual indicator
+    if (!cp.isConnected) {
+      // Add a subtle pattern or different styling for unexplored doors
+      doorElements.push(
+        <rect
+          key={`${roomId}-door-unexplored-${index}`}
+          x={doorX + 1}
+          y={doorY + 1}
+          width={doorWidth - 2}
+          height={doorHeight - 2}
+          fill="none"
+          stroke="#999"
+          strokeWidth={1}
+          strokeDasharray="2,2"
+        />
+      );
+    }
+    
+    return <g key={`${roomId}-door-group-${index}`}>{doorElements}</g>;
   };
 
   const renderCorridor = (corridor: Corridor) => {
