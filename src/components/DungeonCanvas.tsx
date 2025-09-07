@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Paper } from '@mui/material';
-import { DungeonMap, Room, Corridor } from '../types';
+import { DungeonMap, Room, Corridor, ConnectionPoint } from '../types';
 import { getRoomTemplateById } from '../data/roomTemplates';
 
 interface DungeonCanvasProps {
@@ -96,7 +96,7 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
     );
   };
 
-  const renderDoor = (roomId: string, cp: any, index: number, gridSquareSize: number) => {
+  const renderDoor = (roomId: string, cp: ConnectionPoint, index: number, gridSquareSize: number) => {
     // Calculate door position centered on the edge of the specific grid cell
     let doorWidth, doorHeight, doorX, doorY;
     
