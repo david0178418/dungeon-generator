@@ -99,7 +99,8 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
   };
 
   // Helper function to convert connection points to door openings for rooms
-  const getDoorOpenings = (room: Room): DoorOpening[] => {
+  // Always create openings for all connection points - door visibility is handled separately
+  const getDoorOpenings = (room: Room, elementId: string): DoorOpening[] => {
     return room.connectionPoints.map(cp => {
       const localX = cp.position.x - room.position.x;
       const localY = cp.position.y - room.position.y;
@@ -256,7 +257,7 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
 
       // Create room walls (bold perimeter strokes with door openings)
       const walls = calculateRoomPerimeter(gridPattern);
-      const doorOpenings = getDoorOpenings(room);
+      const doorOpenings = getDoorOpenings(room, room.id);
       const wallPath = generateWallPath(walls, doorOpenings, gridSquareSize, x, y);
       
       if (wallPath) {
@@ -390,11 +391,11 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
         cursor = 'pointer';
       }
     } else if (doorState === DoorState.Open) {
-      // Open door - show as empty space
-      doorFill = 'none';
-      doorStroke = '#999';
-      doorStrokeWidth = 1;
-      doorOpacity = 0.5;
+      // Open door - show as green/transparent to indicate it's open
+      doorFill = '#4caf50';
+      doorStroke = '#2e7d32';
+      doorStrokeWidth = 2;
+      doorOpacity = 0.3;
     }
 
     const handleDoorClick = (e: React.MouseEvent) => {

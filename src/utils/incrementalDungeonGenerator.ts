@@ -206,12 +206,23 @@ export class IncrementalDungeonGenerator {
     
     // Check what area is available and trim the room to fit
     const availableGrid = this.getAvailableRoomArea(roomPosition, template.width, template.height);
-    const trimmedTemplate = this.trimRoomToFit(template, roomPosition, availableGrid);
+    
+    // Ensure the connecting point is available by marking its square as available
+    const connectingCP = template.connectionPoints[connectingPointIndex];
+    const connectingSquareX = connectingCP.position.x;
+    const connectingSquareY = connectingCP.position.y;
+    
+    if (connectingSquareY < template.height && connectingSquareX < template.width) {
+      availableGrid[connectingSquareY][connectingSquareX] = true;
+    }
+    
+    const trimmedTemplate = this.trimRoomToFit(template, roomPosition, availableGrid, connectingPointIndex);
     
     if (!trimmedTemplate) {
       return this.generateConnectedCorridor(connectionPoint, seed);
     }
 
+    
     const newRoom: Room = {
       id: `room-${String(this.roomCounter++).padStart(2, '0')}`,
       shape: trimmedTemplate.shape,
@@ -234,6 +245,7 @@ export class IncrementalDungeonGenerator {
         isGenerated: false,
       })),
     };
+
 
     return { rooms: [newRoom], corridors: [] };
   }
@@ -327,6 +339,19 @@ export class IncrementalDungeonGenerator {
     // Calculate room position so that templateCP aligns with connectionPoint
     let roomX = connectionPoint.position.x - templateCP.position.x;
     let roomY = connectionPoint.position.y - templateCP.position.y;
+    
+    // Adjust positioning based on door directions to avoid overlap
+    // When doors face each other, they should be in adjacent grid squares
+    if (connectionPoint.direction === 'west' && templateCP.direction === 'east') {
+      roomX -= 1; // Move the room one square left so doors are adjacent
+    } else if (connectionPoint.direction === 'east' && templateCP.direction === 'west') {
+      roomX += 1; // Move the room one square right so doors are adjacent  
+    } else if (connectionPoint.direction === 'north' && templateCP.direction === 'south') {
+      roomY -= 1; // Move the room one square up so doors are adjacent
+    } else if (connectionPoint.direction === 'south' && templateCP.direction === 'north') {
+      roomY += 1; // Move the room one square down so doors are adjacent
+    }
+
 
     return { 
       roomPosition: { x: roomX, y: roomY }, 
@@ -357,7 +382,7 @@ export class IncrementalDungeonGenerator {
     return availableGrid;
   }
 
-  private trimRoomToFit(template: any, position: Position, availableGrid: boolean[][]): any {
+  private trimRoomToFit(template: any, position: Position, availableGrid: boolean[][], preserveConnectionIndex?: number): any {
     // Create a modified template with only the available squares
     const trimmedPattern: boolean[][] = [];
     let hasAnySquares = false;
@@ -376,8 +401,20 @@ export class IncrementalDungeonGenerator {
       return null; // No usable area
     }
     
+    
     // Filter connection points to only include those that are on the perimeter of the trimmed room
-    const validConnectionPoints = template.connectionPoints.filter((cp: any) => {
+    const validConnectionPoints = template.connectionPoints.filter((cp: any, index: number) => {
+      // Always preserve the connection point used for positioning
+      if (preserveConnectionIndex !== undefined && index === preserveConnectionIndex) {
+        // But only if it's still on an available square
+        const localX = cp.position.x;
+        const localY = cp.position.y;
+        const isAvailable = localX >= 0 && localX < template.width && 
+                           localY >= 0 && localY < template.height && 
+                           availableGrid[localY] && availableGrid[localY][localX] &&
+                           trimmedPattern[localY][localX];
+        return isAvailable;
+      }
       const localX = cp.position.x;
       const localY = cp.position.y;
       
@@ -408,7 +445,6 @@ export class IncrementalDungeonGenerator {
       return isOnPerimeter();
     });
     
-    console.log('Room trimmed:', template.id, '- kept', trimmedPattern.flat().filter(x => x).length, 'of', template.gridPattern.flat().filter((x: boolean) => x).length, 'squares');
     
     return {
       ...template,
