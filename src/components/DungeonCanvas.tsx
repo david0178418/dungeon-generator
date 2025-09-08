@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Paper, CircularProgress } from '@mui/material';
-import { DungeonMap, Room, Corridor, ConnectionPoint, ExplorationState, DoorState } from '../types';
+import { DungeonMap, Room, Corridor, ConnectionPoint, ExplorationState, DoorState, Position } from '../types';
 import { getRoomTemplateById } from '../data/roomTemplates';
 
 interface DungeonCanvasProps {
@@ -11,6 +11,21 @@ interface DungeonCanvasProps {
   onDoorClick: (doorId: string, connectionPoint: ConnectionPoint, sourceElementId: string) => void;
   onCorridorExplore: (connectionPoint: ConnectionPoint, sourceElementId: string) => void;
   isGenerating: boolean;
+}
+
+interface WallSegment {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+interface DoorOpening {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  direction: string;
 }
 
 export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
@@ -24,6 +39,184 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
 }) => {
   const canvasSize = 800;
   const gridSquareSize = dungeonMap ? canvasSize / dungeonMap.gridSize : 20;
+
+  // Helper function to calculate room perimeter from gridPattern
+
+  const calculateRoomPerimeter = (gridPattern: boolean[][]): WallSegment[] => {
+    const walls: WallSegment[] = [];
+    const height = gridPattern.length;
+    const width = gridPattern[0]?.length || 0;
+    
+    for (let row = 0; row < height; row++) {
+      for (let col = 0; col < width; col++) {
+        if (gridPattern[row][col]) {
+          // Check each edge of this cell
+          
+          // North edge
+          if (row === 0 || !gridPattern[row - 1][col]) {
+            walls.push({
+              x1: col,
+              y1: row,
+              x2: col + 1,
+              y2: row
+            });
+          }
+          
+          // South edge
+          if (row === height - 1 || !gridPattern[row + 1][col]) {
+            walls.push({
+              x1: col,
+              y1: row + 1,
+              x2: col + 1,
+              y2: row + 1
+            });
+          }
+          
+          // West edge
+          if (col === 0 || !gridPattern[row][col - 1]) {
+            walls.push({
+              x1: col,
+              y1: row,
+              x2: col,
+              y2: row + 1
+            });
+          }
+          
+          // East edge
+          if (col === width - 1 || !gridPattern[row][col + 1]) {
+            walls.push({
+              x1: col + 1,
+              y1: row,
+              x2: col + 1,
+              y2: row + 1
+            });
+          }
+        }
+      }
+    }
+    
+    return walls;
+  };
+
+  // Helper function to convert connection points to door openings for rooms
+  const getDoorOpenings = (room: Room): DoorOpening[] => {
+    return room.connectionPoints.map(cp => {
+      const localX = cp.position.x - room.position.x;
+      const localY = cp.position.y - room.position.y;
+      
+      switch (cp.direction) {
+        case 'north':
+          return { x: localX, y: localY, width: 0.6, height: 0.2, direction: 'north' };
+        case 'south':
+          return { x: localX, y: localY + 1, width: 0.6, height: 0.2, direction: 'south' };
+        case 'east':
+          return { x: localX + 1, y: localY, width: 0.2, height: 0.6, direction: 'east' };
+        case 'west':
+          return { x: localX, y: localY, width: 0.2, height: 0.6, direction: 'west' };
+        default:
+          return { x: localX, y: localY, width: 0.3, height: 0.3, direction: 'unknown' };
+      }
+    });
+  };
+
+  // Helper function to check if a wall segment intersects with a door opening
+  const wallIntersectsDoor = (wall: WallSegment, door: DoorOpening): boolean => {
+    const doorLeft = door.x - door.width / 2;
+    const doorRight = door.x + door.width / 2;
+    const doorTop = door.y - door.height / 2;
+    const doorBottom = door.y + door.height / 2;
+    
+    // Check if wall segment overlaps with door opening
+    if (wall.x1 === wall.x2) {
+      // Vertical wall
+      const wallX = wall.x1;
+      const wallTop = Math.min(wall.y1, wall.y2);
+      const wallBottom = Math.max(wall.y1, wall.y2);
+      
+      return wallX >= doorLeft && wallX <= doorRight && 
+             wallTop < doorBottom && wallBottom > doorTop;
+    } else {
+      // Horizontal wall
+      const wallY = wall.y1;
+      const wallLeft = Math.min(wall.x1, wall.x2);
+      const wallRight = Math.max(wall.x1, wall.x2);
+      
+      return wallY >= doorTop && wallY <= doorBottom &&
+             wallLeft < doorRight && wallRight > doorLeft;
+    }
+  };
+
+  // Helper function to generate wall path with door openings
+  const generateWallPath = (walls: WallSegment[], doors: DoorOpening[], gridSquareSize: number, roomX: number, roomY: number): string => {
+    // Direction-specific door-wall intersection: remove walls based on exact door positioning
+    const filteredWalls = walls.filter(wall => {
+      return !doors.some(door => {
+        const doorGridX = Math.floor(door.x);
+        const doorGridY = Math.floor(door.y);
+        
+        // Direction-specific intersection logic
+        switch (door.direction) {
+          case 'north':
+            // North doors are at the top edge, remove horizontal walls at that position
+            return wall.y1 === wall.y2 && wall.y1 === doorGridY &&
+                   doorGridX >= Math.min(wall.x1, wall.x2) && doorGridX < Math.max(wall.x1, wall.x2);
+          
+          case 'south':
+            // South doors are at the bottom edge, remove horizontal walls at doorY + 1
+            return wall.y1 === wall.y2 && wall.y1 === doorGridY &&
+                   doorGridX >= Math.min(wall.x1, wall.x2) && doorGridX < Math.max(wall.x1, wall.x2);
+          
+          case 'west':
+            // West doors are at the left edge, remove vertical walls at that position
+            return wall.x1 === wall.x2 && wall.x1 === doorGridX &&
+                   doorGridY >= Math.min(wall.y1, wall.y2) && doorGridY < Math.max(wall.y1, wall.y2);
+          
+          case 'east':
+            // East doors are at the right edge, remove vertical walls at doorX
+            return wall.x1 === wall.x2 && wall.x1 === doorGridX &&
+                   doorGridY >= Math.min(wall.y1, wall.y2) && doorGridY < Math.max(wall.y1, wall.y2);
+          
+          default:
+            // Fallback to original logic for unknown directions
+            if (wall.y1 === wall.y2) {
+              return (wall.y1 === doorGridY || wall.y1 === doorGridY + 1) &&
+                     doorGridX >= Math.min(wall.x1, wall.x2) && doorGridX < Math.max(wall.x1, wall.x2);
+            }
+            if (wall.x1 === wall.x2) {
+              return (wall.x1 === doorGridX || wall.x1 === doorGridX + 1) &&
+                     doorGridY >= Math.min(wall.y1, wall.y2) && doorGridY < Math.max(wall.y1, wall.y2);
+            }
+            return false;
+        }
+      });
+    });
+    
+    if (filteredWalls.length === 0) return '';
+    
+    // Convert wall segments to screen coordinates and create path
+    const pathSegments = filteredWalls.map(wall => {
+      const x1 = roomX + wall.x1 * gridSquareSize;
+      const y1 = roomY + wall.y1 * gridSquareSize;
+      const x2 = roomX + wall.x2 * gridSquareSize;
+      const y2 = roomY + wall.y2 * gridSquareSize;
+      
+      return `M ${x1} ${y1} L ${x2} ${y2}`;
+    });
+    
+    return pathSegments.join(' ');
+  };
+
+  // Helper function to create default grid pattern for rooms without custom pattern
+  const getDefaultGridPattern = (room: Room): boolean[][] => {
+    const pattern: boolean[][] = [];
+    for (let row = 0; row < room.height; row++) {
+      pattern[row] = [];
+      for (let col = 0; col < room.width; col++) {
+        pattern[row][col] = true; // All squares occupied by default
+      }
+    }
+    return pattern;
+  };
 
   const renderRoom = (room: Room) => {
     const x = room.position.x * gridSquareSize;
@@ -40,26 +233,45 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
     let roomElements: React.ReactElement[] = [];
     
     if (gridPattern) {
-      // Render using grid pattern
+      // Create room interior (filled squares without borders)
       for (let row = 0; row < gridPattern.length; row++) {
         for (let col = 0; col < gridPattern[row].length; col++) {
           if (gridPattern[row][col]) {
             roomElements.push(
               <rect
-                key={`${room.id}-${row}-${col}`}
+                key={`${room.id}-fill-${row}-${col}`}
                 x={x + col * gridSquareSize}
                 y={y + row * gridSquareSize}
                 width={gridSquareSize}
                 height={gridSquareSize}
                 fill={isSelected ? '#e3f2fd' : '#f8f8f8'}
-                stroke={isSelected ? '#2196f3' : '#000'}
-                strokeWidth={isSelected ? 3 : 2}
+                stroke="none"
                 style={{ cursor: 'pointer' }}
                 onClick={() => onRoomSelect(room.id)}
               />
             );
           }
         }
+      }
+
+      // Create room walls (bold perimeter strokes with door openings)
+      const walls = calculateRoomPerimeter(gridPattern);
+      const doorOpenings = getDoorOpenings(room);
+      const wallPath = generateWallPath(walls, doorOpenings, gridSquareSize, x, y);
+      
+      if (wallPath) {
+        roomElements.push(
+          <path
+            key={`${room.id}-walls`}
+            d={wallPath}
+            fill="none"
+            stroke={isSelected ? '#2196f3' : '#000'}
+            strokeWidth={isSelected ? 4 : 3}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            pointerEvents="none"
+          />
+        );
       }
     } else {
       // Fallback to simple rectangle
@@ -72,7 +284,7 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
           height={room.height * gridSquareSize}
           fill={isSelected ? '#e3f2fd' : '#f8f8f8'}
           stroke={isSelected ? '#2196f3' : '#000'}
-          strokeWidth={isSelected ? 3 : 2}
+          strokeWidth={isSelected ? 4 : 3}
           style={{ cursor: 'pointer' }}
           onClick={() => onRoomSelect(room.id)}
         />
@@ -260,21 +472,87 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
   const renderCorridor = (corridor: Corridor) => {
     const elements: React.ReactElement[] = [];
 
-    // Render corridor path
+    // Create corridor interior (filled squares without borders)
     corridor.path.forEach((pos, index) => {
       elements.push(
         <rect
-          key={`${corridor.id}-${index}`}
+          key={`${corridor.id}-fill-${index}`}
           x={pos.x * gridSquareSize}
           y={pos.y * gridSquareSize}
           width={gridSquareSize}
           height={gridSquareSize}
           fill="#e0e0e0"
-          stroke="#666"
-          strokeWidth={1}
+          stroke="none"
         />
       );
     });
+
+    // Create corridor walls (simple rectangular perimeter)
+    if (corridor.path.length > 0) {
+      const minX = Math.min(...corridor.path.map(p => p.x));
+      const maxX = Math.max(...corridor.path.map(p => p.x));
+      const minY = Math.min(...corridor.path.map(p => p.y));
+      const maxY = Math.max(...corridor.path.map(p => p.y));
+      
+      // Create a simple grid pattern for the corridor
+      const corridorWidth = maxX - minX + 1;
+      const corridorHeight = maxY - minY + 1;
+      const corridorPattern: boolean[][] = [];
+      
+      // Initialize pattern
+      for (let y = 0; y < corridorHeight; y++) {
+        corridorPattern[y] = new Array(corridorWidth).fill(false);
+      }
+      
+      // Fill pattern based on corridor path
+      corridor.path.forEach(pos => {
+        corridorPattern[pos.y - minY][pos.x - minX] = true;
+      });
+      
+      // Calculate walls for corridor
+      const walls = calculateRoomPerimeter(corridorPattern);
+      const doorOpenings = corridor.connectionPoints.map(cp => {
+        const localX = cp.position.x - minX;
+        const localY = cp.position.y - minY;
+        
+        // Use same door sizing logic as rooms
+        switch (cp.direction) {
+          case 'north':
+            return { x: localX, y: localY, width: 0.6, height: 0.2, direction: 'north' };
+          case 'south':
+            return { x: localX, y: localY + 1, width: 0.6, height: 0.2, direction: 'south' };
+          case 'east':
+            return { x: localX + 1, y: localY, width: 0.2, height: 0.6, direction: 'east' };
+          case 'west':
+            return { x: localX, y: localY, width: 0.2, height: 0.6, direction: 'west' };
+          default:
+            return { x: localX, y: localY, width: 0.3, height: 0.3, direction: 'unknown' };
+        }
+      });
+      
+      const wallPath = generateWallPath(
+        walls,
+        doorOpenings,
+        gridSquareSize,
+        minX * gridSquareSize,
+        minY * gridSquareSize
+      );
+      
+      if (wallPath) {
+        elements.push(
+          <path
+            key={`${corridor.id}-walls`}
+            d={wallPath}
+            fill="none"
+            stroke="#333"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            pointerEvents="none"
+          />
+        );
+      }
+    }
 
     // Add corridor doors/connection points
     const doors = corridor.connectionPoints?.map((cp, index) => 

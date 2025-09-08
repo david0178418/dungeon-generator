@@ -376,13 +376,36 @@ export class IncrementalDungeonGenerator {
       return null; // No usable area
     }
     
-    // Filter connection points to only include those in available areas
+    // Filter connection points to only include those that are on the perimeter of the trimmed room
     const validConnectionPoints = template.connectionPoints.filter((cp: any) => {
       const localX = cp.position.x;
       const localY = cp.position.y;
-      return localX >= 0 && localX < template.width && 
-             localY >= 0 && localY < template.height && 
-             availableGrid[localY] && availableGrid[localY][localX];
+      
+      // Must be within bounds and on an available square
+      if (localX < 0 || localX >= template.width || 
+          localY < 0 || localY >= template.height || 
+          !availableGrid[localY] || !availableGrid[localY][localX] ||
+          !trimmedPattern[localY][localX]) {
+        return false;
+      }
+      
+      // Check if this connection point is actually on the perimeter of the trimmed shape
+      const isOnPerimeter = () => {
+        switch (cp.direction) {
+          case 'north':
+            return localY === 0 || !trimmedPattern[localY - 1][localX];
+          case 'south':
+            return localY === template.height - 1 || !trimmedPattern[localY + 1][localX];
+          case 'west':
+            return localX === 0 || !trimmedPattern[localY][localX - 1];
+          case 'east':
+            return localX === template.width - 1 || !trimmedPattern[localY][localX + 1];
+          default:
+            return true; // Allow diagonal connections for now
+        }
+      };
+      
+      return isOnPerimeter();
     });
     
     console.log('Room trimmed:', template.id, '- kept', trimmedPattern.flat().filter(x => x).length, 'of', template.gridPattern.flat().filter((x: boolean) => x).length, 'squares');
