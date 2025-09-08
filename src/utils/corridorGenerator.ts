@@ -237,16 +237,19 @@ export class CorridorGenerator {
       position: start,
       length,
       width: 1,
+      isGenerated: true,
       connectionPoints: [
         {
           direction: this.positionToExitDirection(start, end),
           position: start,
           isConnected: false,
+          isGenerated: false,
         },
         {
           direction: this.positionToExitDirection(end, start),
           position: end,
           isConnected: false,
+          isGenerated: false,
         },
       ],
       path,
@@ -274,21 +277,25 @@ export class CorridorGenerator {
       position,
       length: 1,
       width: 1,
+      isGenerated: true,
       connectionPoints: [
         {
           direction: ExitDirection.North,
           position: { x: position.x, y: position.y - 1 },
           isConnected: false,
+          isGenerated: false,
         },
         {
           direction: ExitDirection.East,
           position: { x: position.x + 1, y: position.y },
           isConnected: false,
+          isGenerated: false,
         },
         {
           direction: ExitDirection.West,
           position: { x: position.x - 1, y: position.y },
           isConnected: false,
+          isGenerated: false,
         },
       ],
       path: [position],
@@ -303,26 +310,31 @@ export class CorridorGenerator {
       position,
       length: 1,
       width: 1,
+      isGenerated: true,
       connectionPoints: [
         {
           direction: ExitDirection.North,
           position: { x: position.x, y: position.y - 1 },
           isConnected: false,
+          isGenerated: false,
         },
         {
           direction: ExitDirection.South,
           position: { x: position.x, y: position.y + 1 },
           isConnected: false,
+          isGenerated: false,
         },
         {
           direction: ExitDirection.East,
           position: { x: position.x + 1, y: position.y },
           isConnected: false,
+          isGenerated: false,
         },
         {
           direction: ExitDirection.West,
           position: { x: position.x - 1, y: position.y },
           isConnected: false,
+          isGenerated: false,
         },
       ],
       path: [position],

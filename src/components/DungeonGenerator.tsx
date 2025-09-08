@@ -2,8 +2,9 @@ import React, { useState, useCallback } from 'react';
 import { Container, Box, Alert, Snackbar } from '@mui/material';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
-import { DungeonMap, GenerationSettings } from '../types';
-import { generateDungeon, DEFAULT_GENERATION_SETTINGS } from '../utils/dungeonGenerator';
+import { DungeonMap, GenerationSettings, ConnectionPoint, DoorState, ExplorationState } from '../types';
+import { IncrementalDungeonGenerator } from '../utils/incrementalDungeonGenerator';
+import { DEFAULT_GENERATION_SETTINGS } from '../utils/dungeonGenerator';
 import { DungeonCanvas } from './DungeonCanvas';
 import { GenerationControls } from './GenerationControls';
 import { RoomDetails } from './RoomDetails';
@@ -36,6 +37,8 @@ export const DungeonGenerator: React.FC = () => {
   const [dungeonMap, setDungeonMap] = useState<DungeonMap | null>(null);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [incrementalGenerator, setIncrementalGenerator] = useState<IncrementalDungeonGenerator | null>(null);
+  const [explorationState, setExplorationState] = useState<ExplorationState | null>(null);
   const [notification, setNotification] = useState<{
     open: boolean;
     message: string;
@@ -62,9 +65,14 @@ export const DungeonGenerator: React.FC = () => {
       // Add a small delay to show the generating state
       await new Promise(resolve => setTimeout(resolve, 500));
       
-      const newDungeon = generateDungeon(settings);
-      setDungeonMap(newDungeon);
-      showNotification(`Generated dungeon with ${newDungeon.totalRooms} rooms!`, 'success');
+      const generator = new IncrementalDungeonGenerator(settings);
+      const initialDungeon = generator.generateInitialDungeon();
+      
+      setIncrementalGenerator(generator);
+      setDungeonMap(initialDungeon);
+      setExplorationState(generator.getExplorationState());
+      
+      showNotification(`Started exploring! Open doors to discover more rooms.`, 'success');
     } catch (error) {
       console.error('Error generating dungeon:', error);
       showNotification('Failed to generate dungeon. Please try again.', 'error');
@@ -76,6 +84,8 @@ export const DungeonGenerator: React.FC = () => {
   const handleReset = useCallback(() => {
     setDungeonMap(null);
     setSelectedRoomId(null);
+    setIncrementalGenerator(null);
+    setExplorationState(null);
     showNotification('Dungeon cleared', 'info');
   }, [showNotification]);
 
@@ -109,6 +119,66 @@ export const DungeonGenerator: React.FC = () => {
     setSelectedRoomId(prevSelected => prevSelected === roomId ? null : roomId);
   }, []);
 
+  const handleDoorClick = useCallback(async (
+    doorId: string,
+    connectionPoint: ConnectionPoint,
+    sourceElementId: string
+  ) => {
+    if (!incrementalGenerator || !explorationState) return;
+
+    try {
+      const currentDoorState = explorationState.doorStates.get(doorId);
+      
+      if (currentDoorState === DoorState.Closed) {
+        setIsGenerating(true);
+        
+        // Open door and potentially generate new content
+        const updatedDungeon = incrementalGenerator.openDoor(doorId, connectionPoint, sourceElementId);
+        
+        setDungeonMap(updatedDungeon);
+        setExplorationState(incrementalGenerator.getExplorationState());
+        
+        if (!connectionPoint.isGenerated) {
+          showNotification('Opened door and discovered new area!', 'success');
+        } else {
+          showNotification('Opened door', 'info');
+        }
+      }
+    } catch (error) {
+      console.error('Error opening door:', error);
+      showNotification('Failed to open door', 'error');
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [incrementalGenerator, explorationState, showNotification]);
+
+  const handleCorridorExplore = useCallback(async (
+    connectionPoint: ConnectionPoint,
+    sourceElementId: string
+  ) => {
+    if (!incrementalGenerator) return;
+
+    try {
+      setIsGenerating(true);
+      
+      const updatedDungeon = incrementalGenerator.generateFromConnectionPoint({
+        connectionPoint,
+        sourceElementId,
+        settings: DEFAULT_GENERATION_SETTINGS,
+      });
+      
+      setDungeonMap(updatedDungeon);
+      setExplorationState(incrementalGenerator.getExplorationState());
+      
+      showNotification('Explored around the corner!', 'success');
+    } catch (error) {
+      console.error('Error exploring corridor:', error);
+      showNotification('Failed to explore corridor', 'error');
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [incrementalGenerator, showNotification]);
+
   const selectedRoom = dungeonMap?.rooms.find(room => room.id === selectedRoomId) || null;
 
   const handleCloseNotification = () => {
@@ -139,7 +209,11 @@ export const DungeonGenerator: React.FC = () => {
             <DungeonCanvas
               dungeonMap={dungeonMap}
               selectedRoomId={selectedRoomId}
+              explorationState={explorationState}
               onRoomSelect={handleRoomSelect}
+              onDoorClick={handleDoorClick}
+              onCorridorExplore={handleCorridorExplore}
+              isGenerating={isGenerating}
             />
           </Box>
           

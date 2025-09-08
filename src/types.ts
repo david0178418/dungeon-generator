@@ -62,6 +62,8 @@ export interface ConnectionPoint {
   position: Position;
   isConnected: boolean;
   connectedElementId?: string; // Can connect to room or corridor
+  isGenerated: boolean; // Whether this connection has been explored/generated
+  generationSeed?: string; // Seed for consistent generation when explored
 }
 
 export interface Room {
@@ -76,6 +78,8 @@ export interface Room {
   description?: string;
   contents?: string;
   templateId?: string;
+  isGenerated: boolean; // Whether this room has been generated/revealed
+  gridPattern?: boolean[][]; // Custom grid pattern if room was trimmed to fit
 }
 
 export interface Corridor {
@@ -87,6 +91,7 @@ export interface Corridor {
   width: number;
   connectionPoints: ConnectionPoint[];
   path: Position[];
+  isGenerated: boolean; // Whether this corridor has been generated/revealed
 }
 
 export interface DungeonMap {
@@ -107,7 +112,7 @@ export interface RoomTemplate {
   size: RoomSize;
   width: number;
   height: number;
-  connectionPoints: Omit<ConnectionPoint, 'isConnected' | 'connectedElementId'>[];
+  connectionPoints: Omit<ConnectionPoint, 'isConnected' | 'connectedElementId' | 'isGenerated' | 'generationSeed'>[];
   gridPattern: boolean[][]; // 2D array representing occupied squares
 }
 
@@ -119,4 +124,23 @@ export interface GenerationSettings {
   forceConnectivity: boolean;
   maxExitsPerRoom: number;
   roomSpacing: number;
+}
+
+export enum DoorState {
+  Closed = 'closed',
+  Open = 'open',
+  Locked = 'locked',
+}
+
+export interface ExplorationState {
+  discoveredRoomIds: Set<string>;
+  discoveredCorridorIds: Set<string>;
+  doorStates: Map<string, DoorState>; // connectionPointId -> DoorState
+  unexploredConnectionPoints: ConnectionPoint[];
+}
+
+export interface GenerationRequest {
+  connectionPoint: ConnectionPoint;
+  sourceElementId: string; // Room or corridor ID that contains the connection point
+  settings: GenerationSettings;
 }

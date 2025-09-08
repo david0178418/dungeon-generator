@@ -136,6 +136,7 @@ export class GeomorphDungeonGenerator {
         y: position.y + cp.position.y,
       },
       isConnected: false,
+      isGenerated: false,
     }));
 
     return {
@@ -148,6 +149,7 @@ export class GeomorphDungeonGenerator {
       height: template.height,
       connectionPoints,
       templateId: template.id,
+      isGenerated: true,
     };
   }
 
