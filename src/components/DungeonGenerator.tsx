@@ -4,7 +4,7 @@ import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { DungeonMap, GenerationSettings, ConnectionPoint, DoorState, ExplorationState } from '../types';
 import { IncrementalDungeonGenerator } from '../utils/incrementalDungeonGenerator';
-import { DEFAULT_GENERATION_SETTINGS } from '../utils/dungeonGenerator';
+import { DEFAULT_GENERATION_SETTINGS } from '../constants';
 import { DungeonCanvas } from './DungeonCanvas';
 import { GenerationControls } from './GenerationControls';
 import { RoomDetails } from './RoomDetails';

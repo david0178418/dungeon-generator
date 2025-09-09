@@ -10,6 +10,9 @@ import {
   GenerationRequest,
   DoorState,
   ExplorationState,
+  RoomTemplate,
+  CorridorType,
+  CorridorDirection,
 } from '../types';
 import { CorridorGenerator } from './corridorGenerator';
 import {
@@ -17,19 +20,24 @@ import {
   getRoomTemplatesByType,
   getRoomTemplateById,
 } from '../data/roomTemplates';
+import { PositionCalculator } from './PositionCalculator';
+import { GridManager } from './GridManager';
+import { ConnectionPointValidator } from './ConnectionPointValidator';
+import { ROOM_GENERATION_PROBABILITY, MIN_CORRIDOR_LENGTH, MAX_CORRIDOR_LENGTH_VARIANCE } from '../constants';
 
 export class IncrementalDungeonGenerator {
   private settings: GenerationSettings;
   private rooms: Room[] = [];
   private corridors: Corridor[] = [];
   private corridorGenerator: CorridorGenerator;
-  private occupiedPositions: Set<string> = new Set();
+  private gridManager: GridManager;
   private explorationState: ExplorationState;
   private roomCounter = 0;
 
   constructor(settings: GenerationSettings) {
     this.settings = settings;
     this.corridorGenerator = new CorridorGenerator(settings.gridSize);
+    this.gridManager = new GridManager(settings.gridSize);
     this.explorationState = {
       discoveredRoomIds: new Set(),
       discoveredCorridorIds: new Set(),
@@ -47,7 +55,7 @@ export class IncrementalDungeonGenerator {
     this.explorationState.discoveredRoomIds.add(entranceRoom.id);
     
     // Mark entrance room as occupied
-    this.markRoomAsOccupied(entranceRoom);
+    this.gridManager.markRoomAsOccupied(entranceRoom);
     
     // Initialize door states for entrance room connections
     entranceRoom.connectionPoints.forEach((cp, index) => {
@@ -78,7 +86,7 @@ export class IncrementalDungeonGenerator {
     generatedElements.rooms.forEach(room => {
       this.rooms.push(room);
       this.explorationState.discoveredRoomIds.add(room.id);
-      this.markRoomAsOccupied(room);
+      this.gridManager.markRoomAsOccupied(room);
       
       // Initialize door states for new room connections
       room.connectionPoints.forEach((cp, index) => {
@@ -96,11 +104,23 @@ export class IncrementalDungeonGenerator {
     generatedElements.corridors.forEach(corridor => {
       this.corridors.push(corridor);
       this.explorationState.discoveredCorridorIds.add(corridor.id);
-      this.markCorridorAsOccupied(corridor);
+      this.gridManager.markCorridorAsOccupied(corridor);
+      
+      // Initialize door states for new corridor connections
+      corridor.connectionPoints.forEach((cp, index) => {
+        const doorId = `${corridor.id}-door-${index}`;
+        this.explorationState.doorStates.set(doorId, DoorState.Closed);
+        if (!cp.isGenerated) {
+          this.explorationState.unexploredConnectionPoints.push({
+            ...cp,
+            generationSeed: this.generateSeed(cp),
+          });
+        }
+      });
     });
 
     // Update the connection point as generated
-    this.updateConnectionPointAsGenerated(connectionPoint, sourceElementId);
+    ConnectionPointValidator.updateConnectionPointAsGenerated(connectionPoint, sourceElementId, this.rooms, this.corridors);
     
     // Remove from unexplored list
     this.explorationState.unexploredConnectionPoints = 
@@ -135,7 +155,7 @@ export class IncrementalDungeonGenerator {
   private reset(): void {
     this.rooms = [];
     this.corridors = [];
-    this.occupiedPositions = new Set();
+    this.gridManager.reset();
     this.roomCounter = 0;
     this.explorationState = {
       discoveredRoomIds: new Set(),
@@ -181,8 +201,8 @@ export class IncrementalDungeonGenerator {
     // Use seed to determine what to generate
     const seedNum = this.seedToNumber(seed);
     
-    // Simple decision: 70% chance of room, 30% chance of corridor
-    if (seedNum % 10 < 7) {
+    // Simple decision: configurable chance of room vs corridor
+    if (seedNum % 10 < ROOM_GENERATION_PROBABILITY * 10) {
       return this.generateConnectedRoom(connectionPoint, seed);
     } else {
       return this.generateConnectedCorridor(connectionPoint, seed);
@@ -198,25 +218,25 @@ export class IncrementalDungeonGenerator {
     const template = templates[seedNum % templates.length];
     
     // Calculate position based on connection direction and find the connecting point
-    const { roomPosition, connectingPointIndex } = this.calculateRoomPositionFromConnection(connectionPoint, template);
+    const { roomPosition, connectingPointIndex } = PositionCalculator.calculateRoomPositionFromConnection(connectionPoint, template);
     
     if (connectingPointIndex === -1) {
       return this.generateConnectedCorridor(connectionPoint, seed);
     }
     
     // Check what area is available and trim the room to fit
-    const availableGrid = this.getAvailableRoomArea(roomPosition, template.width, template.height);
+    const availableGridInfo = this.gridManager.getAvailableRoomArea(roomPosition, template.width, template.height);
     
     // Ensure the connecting point is available by marking its square as available
     const connectingCP = template.connectionPoints[connectingPointIndex];
-    const connectingSquareX = connectingCP.position.x;
-    const connectingSquareY = connectingCP.position.y;
+    this.gridManager.markPositionAsAvailable(
+      connectingCP.position, 
+      availableGridInfo.grid, 
+      template.width, 
+      template.height
+    );
     
-    if (connectingSquareY < template.height && connectingSquareX < template.width) {
-      availableGrid[connectingSquareY][connectingSquareX] = true;
-    }
-    
-    const trimmedTemplate = this.trimRoomToFit(template, roomPosition, availableGrid, connectingPointIndex);
+    const trimmedTemplate = this.trimRoomToFit(template, roomPosition, availableGridInfo.grid, connectingPointIndex);
     
     if (!trimmedTemplate) {
       return this.generateConnectedCorridor(connectionPoint, seed);
@@ -234,7 +254,7 @@ export class IncrementalDungeonGenerator {
       templateId: template.id, // Keep original template ID for reference
       gridPattern: trimmedTemplate.gridPattern, // Store the trimmed pattern
       isGenerated: true,
-      connectionPoints: trimmedTemplate.connectionPoints.map((cp: any, index: number) => ({
+      connectionPoints: trimmedTemplate.connectionPoints.map((cp, index: number) => ({
         ...cp,
         position: {
           x: roomPosition.x + cp.position.x,
@@ -255,7 +275,7 @@ export class IncrementalDungeonGenerator {
     seed: string
   ): { rooms: Room[]; corridors: Corridor[] } {
     const seedNum = this.seedToNumber(seed);
-    const corridorLength = 3 + (seedNum % 5); // 3-7 squares long
+    const corridorLength = MIN_CORRIDOR_LENGTH + (seedNum % MAX_CORRIDOR_LENGTH_VARIANCE);
     
     const corridorPath = this.generateCorridorPath(connectionPoint, corridorLength);
     
@@ -273,8 +293,8 @@ export class IncrementalDungeonGenerator {
       isGenerated: true,
       connectionPoints: [
         {
-          direction: this.getOppositeDirection(connectionPoint.direction),
-          position: corridorPath[0],
+          direction: PositionCalculator.getOppositeDirection(connectionPoint.direction),
+          position: corridorPath[0], // Use the first position of the corridor path for proper alignment
           isConnected: true,
           connectedElementId: connectionPoint.connectedElementId || 'unknown',
           isGenerated: true,
@@ -314,75 +334,9 @@ export class IncrementalDungeonGenerator {
     return Math.abs(hash);
   }
 
-  private calculateRoomPositionFromConnection(
-    connectionPoint: ConnectionPoint,
-    template: any
-  ): { roomPosition: Position; connectingPointIndex: number } {
-    // Find a connection point in the template that can connect to the source
-    const oppositeDirection = this.getOppositeDirection(connectionPoint.direction);
-    
-    const compatibleConnectionPoints = template.connectionPoints
-      .map((cp: any, index: number) => ({ ...cp, index }))
-      .filter((cp: any) => cp.direction === oppositeDirection);
-    
-    if (compatibleConnectionPoints.length === 0) {
-      // Fallback if no compatible connection point found
-      return { 
-        roomPosition: { x: 0, y: 0 }, 
-        connectingPointIndex: -1 
-      };
-    }
-    
-    // Use the first compatible connection point
-    const templateCP = compatibleConnectionPoints[0];
-    
-    // Calculate room position so that templateCP aligns with connectionPoint
-    let roomX = connectionPoint.position.x - templateCP.position.x;
-    let roomY = connectionPoint.position.y - templateCP.position.y;
-    
-    // Adjust positioning based on door directions to avoid overlap
-    // When doors face each other, they should be in adjacent grid squares
-    if (connectionPoint.direction === 'west' && templateCP.direction === 'east') {
-      roomX -= 1; // Move the room one square left so doors are adjacent
-    } else if (connectionPoint.direction === 'east' && templateCP.direction === 'west') {
-      roomX += 1; // Move the room one square right so doors are adjacent  
-    } else if (connectionPoint.direction === 'north' && templateCP.direction === 'south') {
-      roomY -= 1; // Move the room one square up so doors are adjacent
-    } else if (connectionPoint.direction === 'south' && templateCP.direction === 'north') {
-      roomY += 1; // Move the room one square down so doors are adjacent
-    }
 
 
-    return { 
-      roomPosition: { x: roomX, y: roomY }, 
-      connectingPointIndex: templateCP.index 
-    };
-  }
-
-  private getAvailableRoomArea(position: Position, width: number, height: number): boolean[][] {
-    const availableGrid: boolean[][] = [];
-    
-    for (let y = 0; y < height; y++) {
-      availableGrid[y] = [];
-      for (let x = 0; x < width; x++) {
-        const worldX = position.x + x;
-        const worldY = position.y + y;
-        
-        // Check bounds and occupancy
-        const isAvailable = worldX >= 0 && 
-                           worldX < this.settings.gridSize && 
-                           worldY >= 0 && 
-                           worldY < this.settings.gridSize && 
-                           !this.occupiedPositions.has(`${worldX},${worldY}`);
-        
-        availableGrid[y][x] = isAvailable;
-      }
-    }
-    
-    return availableGrid;
-  }
-
-  private trimRoomToFit(template: any, position: Position, availableGrid: boolean[][], preserveConnectionIndex?: number): any {
+  private trimRoomToFit(template: RoomTemplate, position: Position, availableGrid: boolean[][], preserveConnectionIndex?: number): RoomTemplate | null {
     // Create a modified template with only the available squares
     const trimmedPattern: boolean[][] = [];
     let hasAnySquares = false;
@@ -402,48 +356,13 @@ export class IncrementalDungeonGenerator {
     }
     
     
-    // Filter connection points to only include those that are on the perimeter of the trimmed room
-    const validConnectionPoints = template.connectionPoints.filter((cp: any, index: number) => {
-      // Always preserve the connection point used for positioning
-      if (preserveConnectionIndex !== undefined && index === preserveConnectionIndex) {
-        // But only if it's still on an available square
-        const localX = cp.position.x;
-        const localY = cp.position.y;
-        const isAvailable = localX >= 0 && localX < template.width && 
-                           localY >= 0 && localY < template.height && 
-                           availableGrid[localY] && availableGrid[localY][localX] &&
-                           trimmedPattern[localY][localX];
-        return isAvailable;
-      }
-      const localX = cp.position.x;
-      const localY = cp.position.y;
-      
-      // Must be within bounds and on an available square
-      if (localX < 0 || localX >= template.width || 
-          localY < 0 || localY >= template.height || 
-          !availableGrid[localY] || !availableGrid[localY][localX] ||
-          !trimmedPattern[localY][localX]) {
-        return false;
-      }
-      
-      // Check if this connection point is actually on the perimeter of the trimmed shape
-      const isOnPerimeter = () => {
-        switch (cp.direction) {
-          case 'north':
-            return localY === 0 || !trimmedPattern[localY - 1][localX];
-          case 'south':
-            return localY === template.height - 1 || !trimmedPattern[localY + 1][localX];
-          case 'west':
-            return localX === 0 || !trimmedPattern[localY][localX - 1];
-          case 'east':
-            return localX === template.width - 1 || !trimmedPattern[localY][localX + 1];
-          default:
-            return true; // Allow diagonal connections for now
-        }
-      };
-      
-      return isOnPerimeter();
-    });
+    // Filter connection points using the validator
+    const validConnectionPoints = ConnectionPointValidator.validateConnectionPoints(
+      template,
+      availableGrid,
+      trimmedPattern,
+      preserveConnectionIndex
+    );
     
     
     return {
@@ -453,98 +372,26 @@ export class IncrementalDungeonGenerator {
     };
   }
 
-  private markRoomAsOccupied(room: Room): void {
-    // Mark the actual occupied squares based on the room's current state
-    // If the room has a custom gridPattern (from trimming), use that
-    // Otherwise, use the original template pattern
-    
-    if (room.gridPattern) {
-      // Room has been trimmed, use its custom pattern
-      for (let y = 0; y < room.gridPattern.length; y++) {
-        for (let x = 0; x < room.gridPattern[y].length; x++) {
-          if (room.gridPattern[y][x]) {
-            const worldX = room.position.x + x;
-            const worldY = room.position.y + y;
-            this.occupiedPositions.add(`${worldX},${worldY}`);
-          }
-        }
-      }
-    } else {
-      // Use original template pattern
-      const template = room.templateId ? this.getRoomTemplateById(room.templateId) : null;
-      
-      if (template && template.gridPattern) {
-        for (let y = 0; y < template.gridPattern.length; y++) {
-          for (let x = 0; x < template.gridPattern[y].length; x++) {
-            if (template.gridPattern[y][x]) {
-              const worldX = room.position.x + x;
-              const worldY = room.position.y + y;
-              this.occupiedPositions.add(`${worldX},${worldY}`);
-            }
-          }
-        }
-      } else {
-        // Fallback to full rectangle if no template pattern available
-        for (let x = room.position.x; x < room.position.x + room.width; x++) {
-          for (let y = room.position.y; y < room.position.y + room.height; y++) {
-            this.occupiedPositions.add(`${x},${y}`);
-          }
-        }
-      }
-    }
-  }
 
-  private getRoomTemplateById(templateId: string): any {
-    return getRoomTemplateById(templateId);
-  }
 
-  private markCorridorAsOccupied(corridor: Corridor): void {
-    corridor.path.forEach(pos => {
-      this.occupiedPositions.add(`${pos.x},${pos.y}`);
-    });
-  }
 
-  private updateConnectionPointAsGenerated(connectionPoint: ConnectionPoint, sourceElementId: string): void {
-    // Find and update the connection point in rooms or corridors
-    for (const room of this.rooms) {
-      if (room.id === sourceElementId) {
-        const cp = room.connectionPoints.find(p => 
-          p.position.x === connectionPoint.position.x && 
-          p.position.y === connectionPoint.position.y &&
-          p.direction === connectionPoint.direction
-        );
-        if (cp) {
-          cp.isGenerated = true;
-          cp.isConnected = true;
-        }
-      }
-    }
-    
-    for (const corridor of this.corridors) {
-      if (corridor.id === sourceElementId) {
-        const cp = corridor.connectionPoints.find(p => 
-          p.position.x === connectionPoint.position.x && 
-          p.position.y === connectionPoint.position.y &&
-          p.direction === connectionPoint.direction
-        );
-        if (cp) {
-          cp.isGenerated = true;
-          cp.isConnected = true;
-        }
-      }
-    }
-  }
 
   private generateCorridorPath(connectionPoint: ConnectionPoint, maxLength: number): Position[] {
     const path: Position[] = [];
-    let currentPos = { ...connectionPoint.position };
-    
     const direction = connectionPoint.direction;
-    const moveVector = this.directionToVector(direction);
+    const moveVector = PositionCalculator.directionToVector(direction);
     
-    // Start from the connection point position and extend in the direction
+    // Apply door positioning adjustment for corridor-to-corridor connections
+    // This ensures proper alignment similar to room-to-room connections
+    const adjustment = this.getCorridorPositionAdjustment(connectionPoint.direction);
+    let currentPos = {
+      x: connectionPoint.position.x + adjustment.x,
+      y: connectionPoint.position.y + adjustment.y,
+    };
+    
+    // Generate corridor path extending in the direction
     for (let i = 0; i < maxLength; i++) {
-      // Move in the direction (skip first iteration to include starting position)
+      // Move in the direction for subsequent positions
       if (i > 0) {
         currentPos = {
           x: currentPos.x + moveVector.x,
@@ -553,13 +400,12 @@ export class IncrementalDungeonGenerator {
       }
       
       // Check bounds
-      if (currentPos.x < 0 || currentPos.x >= this.settings.gridSize ||
-          currentPos.y < 0 || currentPos.y >= this.settings.gridSize) {
+      if (!this.gridManager.isWithinBounds(currentPos)) {
         break;
       }
       
       // Check occupancy (but allow the first position which might be the door itself)
-      if (i > 0 && this.occupiedPositions.has(`${currentPos.x},${currentPos.y}`)) {
+      if (i > 0 && this.gridManager.isPositionOccupied(currentPos)) {
         break;
       }
       
@@ -569,7 +415,25 @@ export class IncrementalDungeonGenerator {
     return path;
   }
 
-  private directionToVector(direction: ExitDirection): Position {
+
+
+  private determineCorridorType(path: Position[]): CorridorType {
+    // Simple logic for now - all straight corridors
+    return CorridorType.Straight;
+  }
+
+  private getCorridorDirection(from: Position, to: Position): CorridorDirection {
+    if (to.x > from.x || to.x < from.x) return CorridorDirection.Horizontal;
+    return CorridorDirection.Vertical;
+  }
+
+  private isConnectionPointConnectable(cp1: ConnectionPoint, cp2: ConnectionPoint): boolean {
+    return PositionCalculator.areConnectionPointsConnectable(cp1, cp2);
+  }
+
+  private getCorridorPositionAdjustment(direction: ExitDirection): Position {
+    // Apply the same positioning logic as rooms to ensure proper door alignment
+    // Corridors should start in adjacent squares to avoid overlap with source doors
     switch (direction) {
       case ExitDirection.North: return { x: 0, y: -1 };
       case ExitDirection.South: return { x: 0, y: 1 };
@@ -577,37 +441,6 @@ export class IncrementalDungeonGenerator {
       case ExitDirection.West: return { x: -1, y: 0 };
       default: return { x: 0, y: 0 };
     }
-  }
-
-  private getOppositeDirection(direction: ExitDirection): ExitDirection {
-    switch (direction) {
-      case ExitDirection.North: return ExitDirection.South;
-      case ExitDirection.South: return ExitDirection.North;
-      case ExitDirection.East: return ExitDirection.West;
-      case ExitDirection.West: return ExitDirection.East;
-      default: return direction;
-    }
-  }
-
-  private determineCorridorType(path: Position[]): any {
-    // Simple logic for now - all straight corridors
-    return 'straight';
-  }
-
-  private getCorridorDirection(from: Position, to: Position): any {
-    if (to.x > from.x || to.x < from.x) return 'horizontal';
-    return 'vertical';
-  }
-
-  private isConnectionPointConnectable(cp1: ConnectionPoint, cp2: ConnectionPoint): boolean {
-    // Check if connection points are at the exact same position and facing opposite directions
-    if (cp1.position.x !== cp2.position.x || cp1.position.y !== cp2.position.y) {
-      return false;
-    }
-    
-    // Check if they face opposite directions
-    const oppositeDirection = this.getOppositeDirection(cp1.direction);
-    return cp2.direction === oppositeDirection;
   }
 
   private createDungeonMap(): DungeonMap {

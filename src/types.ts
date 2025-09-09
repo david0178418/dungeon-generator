@@ -144,3 +144,56 @@ export interface GenerationRequest {
   sourceElementId: string; // Room or corridor ID that contains the connection point
   settings: GenerationSettings;
 }
+
+// Rendering-related types
+export interface WallSegment {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+export interface DoorOpening {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  direction: string;
+}
+
+export interface DoorRenderInfo {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  fill: string;
+  stroke: string;
+  strokeWidth: number;
+  opacity: number;
+  cursor: string;
+}
+
+// Position calculation types
+export interface PositionAdjustment {
+  x: number;
+  y: number;
+}
+
+export interface RoomPositionCalculation {
+  roomPosition: Position;
+  connectingPointIndex: number;
+}
+
+// Template connection point (before world positioning)
+export interface TemplateConnectionPoint {
+  direction: ExitDirection;
+  position: Position;
+  index?: number;
+}
+
+// Grid management types  
+export interface GridAvailability {
+  grid: boolean[][];
+  width: number;
+  height: number;
+}
