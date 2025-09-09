@@ -13,6 +13,7 @@ import {
   RoomTemplate,
   CorridorType,
   CorridorDirection,
+  ConnectionPointState,
 } from '../types';
 import { CorridorGenerator } from './corridorGenerator';
 import {
@@ -23,6 +24,9 @@ import {
 import { PositionCalculator } from './PositionCalculator';
 import { GridManager } from './GridManager';
 import { ConnectionPointValidator } from './ConnectionPointValidator';
+import { SharedWallManager } from './SharedWallManager';
+import { RoomIntegrationValidator } from './RoomIntegrationValidator';
+import { BlockExpansionEngine } from './BlockExpansionEngine';
 import { ROOM_GENERATION_PROBABILITY, MIN_CORRIDOR_LENGTH, MAX_CORRIDOR_LENGTH_VARIANCE } from '../constants';
 
 export class IncrementalDungeonGenerator {
@@ -31,6 +35,7 @@ export class IncrementalDungeonGenerator {
   private corridors: Corridor[] = [];
   private corridorGenerator: CorridorGenerator;
   private gridManager: GridManager;
+  private sharedWallManager: SharedWallManager;
   private explorationState: ExplorationState;
   private roomCounter = 0;
 
@@ -38,6 +43,7 @@ export class IncrementalDungeonGenerator {
     this.settings = settings;
     this.corridorGenerator = new CorridorGenerator(settings.gridSize);
     this.gridManager = new GridManager(settings.gridSize);
+    this.sharedWallManager = new SharedWallManager();
     this.explorationState = {
       discoveredRoomIds: new Set(),
       discoveredCorridorIds: new Set(),
@@ -57,10 +63,16 @@ export class IncrementalDungeonGenerator {
     // Mark entrance room as occupied
     this.gridManager.markRoomAsOccupied(entranceRoom);
     
-    // Initialize door states for entrance room connections
+    // Register room with shared wall manager and get updated connection points
+    const updatedConnectionPoints = this.sharedWallManager.addElement(entranceRoom);
+    entranceRoom.connectionPoints = updatedConnectionPoints;
+    
+    // Initialize door states for entrance room connections using shared wall manager
     entranceRoom.connectionPoints.forEach((cp, index) => {
       const doorId = `${entranceRoom.id}-door-${index}`;
-      this.explorationState.doorStates.set(doorId, DoorState.Closed);
+      const globalDoorState = this.sharedWallManager.getDoorState(cp.position, cp.direction);
+      this.explorationState.doorStates.set(doorId, globalDoorState);
+      
       if (!cp.isGenerated) {
         this.explorationState.unexploredConnectionPoints.push({
           ...cp,
@@ -76,23 +88,58 @@ export class IncrementalDungeonGenerator {
   generateFromConnectionPoint(request: GenerationRequest): DungeonMap {
     const { connectionPoint, sourceElementId, settings } = request;
     
-    // Use the generation seed to ensure consistent results
-    const seed = connectionPoint.generationSeed || this.generateSeed(connectionPoint);
+    // Create state snapshot for rollback capability
+    const stateSnapshot = this.createStateSnapshot();
     
-    // Generate new room or corridor based on the seed and context
-    const generatedElements = this.generateConnectedContent(connectionPoint, seed, sourceElementId);
-    
-    // Add generated elements to the dungeon
+    try {
+      // Use the generation seed to ensure consistent results
+      const seed = connectionPoint.generationSeed || this.generateSeed(connectionPoint);
+      
+      // Generate new room or corridor based on the seed and context
+      const generatedElements = this.generateConnectedContent(connectionPoint, seed, sourceElementId);
+      
+      // Check if generation failed (empty result)
+      if (generatedElements.rooms.length === 0 && generatedElements.corridors.length === 0) {
+        return this.createDungeonMap();
+      }
+      
+      // ATOMIC INTEGRATION: Add all elements or rollback on failure
+      this.integrateGeneratedElements(generatedElements, connectionPoint, sourceElementId);
+      
+      return this.createDungeonMap();
+    } catch (error) {
+      // Rollback on any failure
+      console.warn('Generation failed, rolling back:', error);
+      this.rollbackToSnapshot(stateSnapshot);
+      return this.createDungeonMap();
+    }
+  }
+  
+  /**
+   * Atomically integrate generated elements into the dungeon
+   */
+  private integrateGeneratedElements(
+    generatedElements: { rooms: Room[]; corridors: Corridor[] },
+    connectionPoint: ConnectionPoint,
+    sourceElementId: string
+  ): void {
+    // Add generated elements to the dungeon (rooms are pre-validated)
     generatedElements.rooms.forEach(room => {
       this.rooms.push(room);
       this.explorationState.discoveredRoomIds.add(room.id);
       this.gridManager.markRoomAsOccupied(room);
       
-      // Initialize door states for new room connections
+      // Register room with shared wall manager (validation already done during generation)
+      this.sharedWallManager.addElement(room);
+      
+      // Initialize door states for new room connections using shared wall manager
       room.connectionPoints.forEach((cp, index) => {
         const doorId = `${room.id}-door-${index}`;
-        this.explorationState.doorStates.set(doorId, DoorState.Closed);
-        if (!cp.isGenerated) {
+        const globalDoorState = this.sharedWallManager.getDoorState(cp.position, cp.direction);
+        this.explorationState.doorStates.set(doorId, globalDoorState);
+        
+        // Only add to unexplored if not generated and not auto-opened
+        if (!cp.isGenerated && globalDoorState !== DoorState.Open) {
           this.explorationState.unexploredConnectionPoints.push({
             ...cp,
             generationSeed: this.generateSeed(cp),
@@ -106,11 +153,17 @@ export class IncrementalDungeonGenerator {
       this.explorationState.discoveredCorridorIds.add(corridor.id);
       this.gridManager.markCorridorAsOccupied(corridor);
       
-      // Initialize door states for new corridor connections
+      // Register corridor with shared wall manager
+      this.sharedWallManager.addElement(corridor);
+      
+      // Initialize door states for new corridor connections using shared wall manager
       corridor.connectionPoints.forEach((cp, index) => {
         const doorId = `${corridor.id}-door-${index}`;
-        this.explorationState.doorStates.set(doorId, DoorState.Closed);
-        if (!cp.isGenerated) {
+        const globalDoorState = this.sharedWallManager.getDoorState(cp.position, cp.direction);
+        this.explorationState.doorStates.set(doorId, globalDoorState);
+        
+        // Only add to unexplored if not generated and not auto-opened
+        if (!cp.isGenerated && globalDoorState !== DoorState.Open) {
           this.explorationState.unexploredConnectionPoints.push({
             ...cp,
             generationSeed: this.generateSeed(cp),
@@ -122,28 +175,67 @@ export class IncrementalDungeonGenerator {
     // Update the connection point as generated
     ConnectionPointValidator.updateConnectionPointAsGenerated(connectionPoint, sourceElementId, this.rooms, this.corridors);
     
-    // Remove from unexplored list
+    // Sync door states across all elements to handle auto-opened doors
+    this.syncAllDoorStates();
+    
+    // Remove from unexplored list (including doors that were auto-opened)
     this.explorationState.unexploredConnectionPoints = 
       this.explorationState.unexploredConnectionPoints.filter(
-        cp => cp.generationSeed !== connectionPoint.generationSeed
+        cp => {
+          const doorState = this.sharedWallManager.getDoorState(cp.position, cp.direction);
+          return cp.generationSeed !== connectionPoint.generationSeed && doorState !== DoorState.Open;
+        }
       );
-
-    return this.createDungeonMap();
   }
 
   // Open a door and reveal what's behind it
   openDoor(doorId: string, connectionPoint: ConnectionPoint, sourceElementId: string): DungeonMap {
     this.explorationState.doorStates.set(doorId, DoorState.Open);
     
-    // If this connection hasn't been generated yet, generate it
-    if (!connectionPoint.isGenerated) {
-      return this.generateFromConnectionPoint({
-        connectionPoint,
-        sourceElementId,
-        settings: this.settings,
-      });
+    // Check if connection point is already being generated or is already connected
+    if (connectionPoint.state === ConnectionPointState.Generating || 
+        connectionPoint.state === ConnectionPointState.Connected) {
+      // Already in progress or completed, just sync states and return
+      this.syncAllDoorStates();
+      return this.createDungeonMap();
     }
     
+    // Check if door was already auto-opened by SharedWallManager
+    const globalDoorState = this.sharedWallManager.getDoorState(connectionPoint.position, connectionPoint.direction);
+    const isAlreadyGenerated = this.sharedWallManager.isDoorGenerated(connectionPoint.position, connectionPoint.direction);
+    
+    // If door is already open globally or already generated, don't generate again
+    if (globalDoorState === DoorState.Open || isAlreadyGenerated || connectionPoint.isGenerated) {
+      // Mark as connected and sync states
+      connectionPoint.state = ConnectionPointState.Connected;
+      this.syncAllDoorStates();
+      return this.createDungeonMap();
+    }
+    
+    // Mark as generating to prevent double-clicks
+    connectionPoint.state = ConnectionPointState.Generating;
+    
+    // If this connection hasn't been generated yet, generate it
+    if (!connectionPoint.isGenerated) {
+      try {
+        const result = this.generateFromConnectionPoint({
+          connectionPoint,
+          sourceElementId,
+          settings: this.settings,
+        });
+        
+        // Mark as connected after successful generation
+        connectionPoint.state = ConnectionPointState.Connected;
+        return result;
+      } catch (error) {
+        // Rollback to ungenerated state on failure
+        connectionPoint.state = ConnectionPointState.Ungenerated;
+        throw error;
+      }
+    }
+    
+    // Mark as connected
+    connectionPoint.state = ConnectionPointState.Connected;
     return this.createDungeonMap();
   }
 
@@ -156,6 +248,7 @@ export class IncrementalDungeonGenerator {
     this.rooms = [];
     this.corridors = [];
     this.gridManager.reset();
+    this.sharedWallManager.reset();
     this.roomCounter = 0;
     this.explorationState = {
       discoveredRoomIds: new Set(),
@@ -189,6 +282,7 @@ export class IncrementalDungeonGenerator {
         },
         isConnected: false,
         isGenerated: false,
+        state: ConnectionPointState.Ungenerated,
       })),
     };
   }
@@ -213,59 +307,106 @@ export class IncrementalDungeonGenerator {
     connectionPoint: ConnectionPoint, 
     seed: string
   ): { rooms: Room[]; corridors: Corridor[] } {
+    // Select geomorph template that will define expansion bounds
     const templates = getRoomTemplatesByType(RoomType.Standard);
     const seedNum = this.seedToNumber(seed);
     const template = templates[seedNum % templates.length];
     
-    // Calculate position based on connection direction and find the connecting point
+    // Calculate where the geomorph would be placed
     const { roomPosition, connectingPointIndex } = PositionCalculator.calculateRoomPositionFromConnection(connectionPoint, template);
     
     if (connectingPointIndex === -1) {
       return this.generateConnectedCorridor(connectionPoint, seed);
     }
     
-    // Check what area is available and trim the room to fit
-    const availableGridInfo = this.gridManager.getAvailableRoomArea(roomPosition, template.width, template.height);
+    // Calculate entry point in world coordinates
+    const templateConnectionPoint = template.connectionPoints[connectingPointIndex];
+    const entryPoint = {
+      x: roomPosition.x + templateConnectionPoint.position.x,
+      y: roomPosition.y + templateConnectionPoint.position.y
+    };
     
-    // Ensure the connecting point is available by marking its square as available
-    const connectingCP = template.connectionPoints[connectingPointIndex];
-    this.gridManager.markPositionAsAvailable(
-      connectingCP.position, 
-      availableGridInfo.grid, 
-      template.width, 
-      template.height
-    );
+    // Set up expansion context
+    const expansionContext = {
+      entryPoint,
+      entryDirection: connectionPoint.direction, // Direction from source toward room
+      sourceConnectionPoint: connectionPoint,
+      sourceElementId: connectionPoint.connectedElementId || 'unknown',
+      geomorphBounds: template,
+      targetPosition: roomPosition,
+      existingRooms: this.rooms,
+      existingCorridors: this.corridors,
+      gridManager: this.gridManager,
+      sharedWallManager: this.sharedWallManager
+    };
     
-    const trimmedTemplate = this.trimRoomToFit(template, roomPosition, availableGridInfo.grid, connectingPointIndex);
+    // Use block expansion engine to grow room organically within geomorph bounds
+    const expansionResult = BlockExpansionEngine.expandRoom(expansionContext);
     
-    if (!trimmedTemplate) {
-      return this.generateConnectedCorridor(connectionPoint, seed);
+    if (expansionResult.expandedBlocks.length === 0) {
+      // No space to expand - create a minimal 1-block room at the entry point
+      console.log('No space to expand room - creating 1-block room at entry point');
+      
+      const minimalRoom: Room = {
+        id: `room-${String(this.roomCounter++).padStart(2, '0')}`,
+        shape: template.shape,
+        type: template.type, 
+        size: template.size,
+        position: entryPoint,
+        width: 1,
+        height: 1,
+        templateId: template.id,
+        gridPattern: [[true]], // Single block
+        isGenerated: true,
+        connectionPoints: [{
+          direction: PositionCalculator.getOppositeDirection(connectionPoint.direction),
+          position: entryPoint,
+          isConnected: true,
+          connectedElementId: connectionPoint.connectedElementId || 'unknown',
+          isGenerated: true,
+          state: ConnectionPointState.Connected
+        }],
+      };
+      
+      return { rooms: [minimalRoom], corridors: [] };
     }
-
     
+    // Calculate room bounds from expanded blocks
+    const minX = Math.min(...expansionResult.expandedBlocks.map(p => p.x));
+    const minY = Math.min(...expansionResult.expandedBlocks.map(p => p.y));
+    const maxX = Math.max(...expansionResult.expandedBlocks.map(p => p.x));
+    const maxY = Math.max(...expansionResult.expandedBlocks.map(p => p.y));
+    
+    // Create grid pattern from expanded blocks
+    const roomWidth = maxX - minX + 1;
+    const roomHeight = maxY - minY + 1;
+    const gridPattern: boolean[][] = [];
+    
+    for (let y = 0; y < roomHeight; y++) {
+      gridPattern[y] = [];
+      for (let x = 0; x < roomWidth; x++) {
+        const worldX = minX + x;
+        const worldY = minY + y;
+        gridPattern[y][x] = expansionResult.expandedBlocks.some(
+          block => block.x === worldX && block.y === worldY
+        );
+      }
+    }
+    
+    // Create the room with organically expanded shape
     const newRoom: Room = {
       id: `room-${String(this.roomCounter++).padStart(2, '0')}`,
-      shape: trimmedTemplate.shape,
-      type: trimmedTemplate.type,
-      size: trimmedTemplate.size,
-      position: roomPosition,
-      width: trimmedTemplate.width,
-      height: trimmedTemplate.height,
-      templateId: template.id, // Keep original template ID for reference
-      gridPattern: trimmedTemplate.gridPattern, // Store the trimmed pattern
+      shape: template.shape, // Keep original shape classification
+      type: template.type,
+      size: template.size,
+      position: { x: minX, y: minY }, // Room position is the top-left of expanded area
+      width: roomWidth,
+      height: roomHeight,
+      templateId: template.id, // Keep reference to source geomorph
+      gridPattern, // Use organically expanded pattern
       isGenerated: true,
-      connectionPoints: trimmedTemplate.connectionPoints.map((cp, index: number) => ({
-        ...cp,
-        position: {
-          x: roomPosition.x + cp.position.x,
-          y: roomPosition.y + cp.position.y,
-        },
-        isConnected: index === connectingPointIndex, // Mark the connecting point as connected
-        connectedElementId: index === connectingPointIndex ? (connectionPoint.connectedElementId || 'unknown') : undefined,
-        isGenerated: false,
-      })),
+      connectionPoints: expansionResult.finalConnectionPoints,
     };
-
 
     return { rooms: [newRoom], corridors: [] };
   }
@@ -298,12 +439,14 @@ export class IncrementalDungeonGenerator {
           isConnected: true,
           connectedElementId: connectionPoint.connectedElementId || 'unknown',
           isGenerated: true,
+          state: ConnectionPointState.Connected,
         },
         {
           direction: connectionPoint.direction,
           position: corridorPath[corridorPath.length - 1],
           isConnected: false,
           isGenerated: false,
+          state: ConnectionPointState.Ungenerated,
         },
       ],
       path: corridorPath,
@@ -441,6 +584,69 @@ export class IncrementalDungeonGenerator {
       case ExitDirection.West: return { x: -1, y: 0 };
       default: return { x: 0, y: 0 };
     }
+  }
+
+  private syncAllDoorStates(): void {
+    // Update door states for all rooms
+    this.rooms.forEach(room => {
+      room.connectionPoints.forEach((cp, index) => {
+        const doorId = `${room.id}-door-${index}`;
+        const globalDoorState = this.sharedWallManager.getDoorState(cp.position, cp.direction);
+        this.explorationState.doorStates.set(doorId, globalDoorState);
+      });
+    });
+
+    // Update door states for all corridors
+    this.corridors.forEach(corridor => {
+      corridor.connectionPoints.forEach((cp, index) => {
+        const doorId = `${corridor.id}-door-${index}`;
+        const globalDoorState = this.sharedWallManager.getDoorState(cp.position, cp.direction);
+        this.explorationState.doorStates.set(doorId, globalDoorState);
+      });
+    });
+  }
+
+  /**
+   * Create a state snapshot for rollback capability
+   */
+  private createStateSnapshot() {
+    return {
+      rooms: [...this.rooms],
+      corridors: [...this.corridors],
+      roomCounter: this.roomCounter,
+      explorationState: {
+        discoveredRoomIds: new Set(this.explorationState.discoveredRoomIds),
+        discoveredCorridorIds: new Set(this.explorationState.discoveredCorridorIds),
+        doorStates: new Map(this.explorationState.doorStates),
+        unexploredConnectionPoints: [...this.explorationState.unexploredConnectionPoints],
+      },
+      // Note: GridManager and SharedWallManager would need snapshot support for full rollback
+    };
+  }
+  
+  /**
+   * Rollback to a previous state snapshot
+   */
+  private rollbackToSnapshot(snapshot: ReturnType<typeof this.createStateSnapshot>): void {
+    this.rooms = snapshot.rooms;
+    this.corridors = snapshot.corridors;
+    this.roomCounter = snapshot.roomCounter;
+    this.explorationState = snapshot.explorationState;
+    
+    // Reset managers to match rolled back state
+    this.gridManager.reset();
+    this.sharedWallManager.reset();
+    
+    // Re-register all elements with managers
+    this.rooms.forEach(room => {
+      this.gridManager.markRoomAsOccupied(room);
+      this.sharedWallManager.addElement(room);
+    });
+    
+    this.corridors.forEach(corridor => {
+      this.gridManager.markCorridorAsOccupied(corridor);
+      this.sharedWallManager.addElement(corridor);
+    });
   }
 
   private createDungeonMap(): DungeonMap {

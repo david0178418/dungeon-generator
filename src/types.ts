@@ -64,6 +64,7 @@ export interface ConnectionPoint {
   connectedElementId?: string; // Can connect to room or corridor
   isGenerated: boolean; // Whether this connection has been explored/generated
   generationSeed?: string; // Seed for consistent generation when explored
+  state: ConnectionPointState; // Current state in the generation state machine
 }
 
 export interface Room {
@@ -112,7 +113,7 @@ export interface RoomTemplate {
   size: RoomSize;
   width: number;
   height: number;
-  connectionPoints: Omit<ConnectionPoint, 'isConnected' | 'connectedElementId' | 'isGenerated' | 'generationSeed'>[];
+  connectionPoints: Omit<ConnectionPoint, 'isConnected' | 'connectedElementId' | 'isGenerated' | 'generationSeed' | 'state'>[];
   gridPattern: boolean[][]; // 2D array representing occupied squares
 }
 
@@ -132,6 +133,12 @@ export enum DoorState {
   Locked = 'locked',
 }
 
+export enum ConnectionPointState {
+  Ungenerated = 'ungenerated',
+  Generating = 'generating', 
+  Connected = 'connected',
+}
+
 export interface ExplorationState {
   discoveredRoomIds: Set<string>;
   discoveredCorridorIds: Set<string>;
@@ -146,7 +153,7 @@ export interface GenerationRequest {
 }
 
 // Rendering-related types
-export interface WallSegment {
+export interface WallLine {
   x1: number;
   y1: number;
   x2: number;
@@ -196,4 +203,40 @@ export interface GridAvailability {
   grid: boolean[][];
   width: number;
   height: number;
+}
+
+// Shared wall management types
+export interface SharedWallLocation {
+  position: Position;
+  direction: ExitDirection;
+  elementIds: string[]; // IDs of rooms/corridors that share this wall
+}
+
+export interface DoorLocation {
+  position: Position;
+  direction: ExitDirection;
+  globalId: string; // Unique ID for this door location
+}
+
+export interface SharedDoor {
+  location: DoorLocation;
+  state: DoorState;
+  connectedElements: string[]; // Element IDs that share this door
+  isGenerated: boolean;
+  connectedElementId?: string; // What this door connects to (if generated)
+  generationSeed?: string;
+}
+
+export interface WallSegment {
+  start: Position;
+  end: Position;
+  direction: 'horizontal' | 'vertical';
+  elementId: string;
+  elementType: 'room' | 'corridor';
+}
+
+export interface WallOverlap {
+  position: Position;
+  elementIds: string[];
+  segmentType: 'horizontal' | 'vertical';
 }

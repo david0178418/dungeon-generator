@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Room, WallSegment, DoorOpening } from '../../types';
+import { Room, WallLine, DoorOpening } from '../../types';
 import { getRoomTemplateById } from '../../data/roomTemplates';
 import { ROOM_COLORS } from '../../constants';
 
@@ -17,8 +17,8 @@ export const WallRenderer: React.FC<WallRendererProps> = React.memo(({
   isSelected
 }) => {
   // Helper function to calculate room perimeter from gridPattern
-  const calculateRoomPerimeter = (gridPattern: boolean[][]): WallSegment[] => {
-    const walls: WallSegment[] = [];
+  const calculateRoomPerimeter = (gridPattern: boolean[][]): WallLine[] => {
+    const walls: WallLine[] = [];
     const height = gridPattern.length;
     const width = gridPattern[0]?.length || 0;
     
@@ -74,7 +74,7 @@ export const WallRenderer: React.FC<WallRendererProps> = React.memo(({
   };
 
   // Create wall path with openings for doors
-  const createWallPath = (walls: WallSegment[], doorOpenings: DoorOpening[]): string => {
+  const createWallPath = (walls: WallLine[], doorOpenings: DoorOpening[]): string => {
     if (walls.length === 0) return '';
     
     let path = '';
