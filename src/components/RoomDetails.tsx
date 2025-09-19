@@ -10,6 +10,7 @@ import {
   Divider,
 } from '@mui/material';
 import { Room, DungeonMap, ExitDirection } from '../types';
+import { isConnectionPointConnected } from '../utils/connectionHelpers';
 
 interface RoomDetailsProps {
   room: Room | null;
@@ -63,7 +64,7 @@ export const RoomDetails: React.FC<RoomDetailsProps> = ({ room, dungeonMap }) =>
   // Find connected rooms through corridors
   const connectedRooms = dungeonMap ? 
     room.connectionPoints
-      .filter(cp => cp.isConnected)
+      .filter(cp => isConnectionPointConnected(cp))
       .map(cp => {
         // Find the corridor or room connected to this point
         const connectedElement = dungeonMap.corridors.find(corridor => 
@@ -131,9 +132,9 @@ export const RoomDetails: React.FC<RoomDetailsProps> = ({ room, dungeonMap }) =>
                     <span>{getDirectionIcon(cp.direction)}</span>
                     <span>{formatRoomShape(cp.direction)}</span>
                     <Chip
-                      label={cp.isConnected ? 'Connected' : 'Open'}
+                      label={isConnectionPointConnected(cp) ? 'Connected' : 'Open'}
                       size="small"
-                      color={cp.isConnected ? 'success' : 'warning'}
+                      color={isConnectionPointConnected(cp) ? 'success' : 'warning'}
                       variant="outlined"
                     />
                   </Box>

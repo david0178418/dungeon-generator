@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, Paper } from '@mui/material';
 import { DungeonMap, Room, Corridor, ConnectionPoint, RoomType, ExteriorDoor } from '../types';
 import { getRoomTemplateById } from '../data/roomTemplates';
+import { isConnectionPointConnected } from '../utils/connectionHelpers';
 
 interface DungeonCanvasProps {
   dungeonMap: DungeonMap | null;
@@ -74,7 +75,7 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
     }
 
     // Add doors (connection points as rectangles) - only for connected points
-    const doors = room.connectionPoints?.filter(cp => cp.isConnected).map((cp, index) =>
+    const doors = room.connectionPoints?.filter(cp => isConnectionPointConnected(cp)).map((cp, index) =>
       renderDoor(room.id, cp, index, gridSquareSize)
     ) || [];
 

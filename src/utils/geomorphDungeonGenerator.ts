@@ -18,6 +18,7 @@ import {
   getRoomTemplatesByType,
   ALL_ROOM_TEMPLATES,
 } from '../data/roomTemplates';
+import { isConnectionPointConnected, connectConnectionPoint } from './connectionHelpers';
 
 export class GeomorphDungeonGenerator {
   private settings: GenerationSettings;
@@ -248,8 +249,8 @@ export class GeomorphDungeonGenerator {
     this.corridors.push(...corridorSegments);
 
     // Mark connection point as connected if it wasn't already
-    if (!closestConnectionPoint.isConnected) {
-      closestConnectionPoint.isConnected = true;
+    if (!isConnectionPointConnected(closestConnectionPoint)) {
+      connectConnectionPoint(closestConnectionPoint, this.entranceDoor.connectedElementId!);
     }
 
     return true;
@@ -368,8 +369,8 @@ export class GeomorphDungeonGenerator {
 
     this.corridors.push(...corridorSegments);
 
-    if (!closestConnectionPoint.isConnected) {
-      closestConnectionPoint.isConnected = true;
+    if (!isConnectionPointConnected(closestConnectionPoint)) {
+      connectConnectionPoint(closestConnectionPoint, 'entrance-corridor');
     }
   }
 
@@ -397,7 +398,7 @@ export class GeomorphDungeonGenerator {
 
     // First pass: try to find an unconnected connection point
     for (const cp of room.connectionPoints) {
-      if (!cp.isConnected) {
+      if (!isConnectionPointConnected(cp)) {
         const distance = this.calculateDistance(position, cp.position);
         if (distance < minDistance) {
           minDistance = distance;
@@ -436,8 +437,8 @@ export class GeomorphDungeonGenerator {
 
     this.corridors.push(...corridorSegments);
 
-    if (!closestConnectionPoint.isConnected) {
-      closestConnectionPoint.isConnected = true;
+    if (!isConnectionPointConnected(closestConnectionPoint)) {
+      connectConnectionPoint(closestConnectionPoint, 'entrance-corridor');
     }
   }
 
@@ -503,7 +504,6 @@ export class GeomorphDungeonGenerator {
         x: position.x + cp.position.x,
         y: position.y + cp.position.y,
       },
-      isConnected: false,
     }));
 
     return {
@@ -592,10 +592,10 @@ export class GeomorphDungeonGenerator {
     } | null = null;
 
     for (const cp1 of room1.connectionPoints) {
-      if (cp1.isConnected) continue;
+      if (isConnectionPointConnected(cp1)) continue;
       
       for (const cp2 of room2.connectionPoints) {
-        if (cp2.isConnected) continue;
+        if (isConnectionPointConnected(cp2)) continue;
         
         const distance = this.calculateDistance(cp1.position, cp2.position);
         
@@ -616,12 +616,59 @@ export class GeomorphDungeonGenerator {
         bestConnection.point2.position
       );
 
-      // Add corridors to the dungeon
-      this.corridors.push(...corridorSegments);
+      // Only proceed if corridor generation was successful
+      if (corridorSegments.length > 0) {
+        // Add corridors to the dungeon
+        this.corridors.push(...corridorSegments);
 
-      // Mark connection points as connected
-      bestConnection.point1.isConnected = true;
-      bestConnection.point2.isConnected = true;
+        // Mark connection points as connected
+        connectConnectionPoint(bestConnection.point1, corridorSegments[0].id);
+        connectConnectionPoint(bestConnection.point2, corridorSegments[corridorSegments.length - 1].id);
+
+        // Link corridor endpoints to room connection points
+        this.linkCorridorToRooms(corridorSegments, bestConnection.point1, bestConnection.point2);
+      }
+    }
+  }
+
+  private linkCorridorToRooms(corridorSegments: Corridor[], roomPoint1: ConnectionPoint, roomPoint2: ConnectionPoint): void {
+    if (corridorSegments.length === 0) return;
+
+    const firstCorridor = corridorSegments[0];
+    const lastCorridor = corridorSegments[corridorSegments.length - 1];
+
+    // Find and mark corridor connection points that connect to room points
+    this.markCorridorConnectionPoint(firstCorridor, roomPoint1.position);
+    this.markCorridorConnectionPoint(lastCorridor, roomPoint2.position);
+
+    // Also mark intermediate corridor connections
+    for (let i = 0; i < corridorSegments.length - 1; i++) {
+      const currentCorridor = corridorSegments[i];
+      const nextCorridor = corridorSegments[i + 1];
+
+      // Find connection points between adjacent corridors
+      this.markCorridorConnectionsBetween(currentCorridor, nextCorridor);
+    }
+  }
+
+  private markCorridorConnectionPoint(corridor: Corridor, targetPosition: Position): void {
+    for (const cp of corridor.connectionPoints) {
+      if (cp.position.x === targetPosition.x && cp.position.y === targetPosition.y) {
+        connectConnectionPoint(cp, corridor.id);
+        break;
+      }
+    }
+  }
+
+  private markCorridorConnectionsBetween(corridor1: Corridor, corridor2: Corridor): void {
+    // Find connection points between two adjacent corridors
+    for (const cp1 of corridor1.connectionPoints) {
+      for (const cp2 of corridor2.connectionPoints) {
+        if (cp1.position.x === cp2.position.x && cp1.position.y === cp2.position.y) {
+          connectConnectionPoint(cp1, corridor2.id);
+          connectConnectionPoint(cp2, corridor1.id);
+        }
+      }
     }
   }
 
@@ -639,7 +686,7 @@ export class GeomorphDungeonGenerator {
       
       for (const room of this.rooms) {
         for (const cp of room.connectionPoints) {
-          if (!cp.isConnected) {
+          if (!isConnectionPointConnected(cp)) {
             availablePoints.push({ room, point: cp });
           }
         }
@@ -664,8 +711,14 @@ export class GeomorphDungeonGenerator {
             endPosition
           );
 
-          this.corridors.push(...corridorSegments);
-          selected.point.isConnected = true;
+          // Only proceed if corridor generation was successful
+          if (corridorSegments.length > 0) {
+            this.corridors.push(...corridorSegments);
+            connectConnectionPoint(selected.point, corridorSegments[0].id);
+
+            // Mark the first corridor's connection point that connects to the room
+            this.markCorridorConnectionPoint(corridorSegments[0], selected.point.position);
+          }
         }
       }
     }

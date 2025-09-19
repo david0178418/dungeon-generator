@@ -60,7 +60,6 @@ export interface Position {
 export interface ConnectionPoint {
   direction: ExitDirection;
   position: Position;
-  isConnected: boolean;
   connectedElementId?: string; // Can connect to room or corridor
 }
 
@@ -114,7 +113,7 @@ export interface RoomTemplate {
   size: RoomSize;
   width: number;
   height: number;
-  connectionPoints: Omit<ConnectionPoint, 'isConnected' | 'connectedElementId'>[];
+  connectionPoints: Omit<ConnectionPoint, 'connectedElementId'>[];
   gridPattern: boolean[][]; // 2D array representing occupied squares
 }
 

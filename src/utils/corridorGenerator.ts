@@ -241,12 +241,10 @@ export class CorridorGenerator {
         {
           direction: this.positionToExitDirection(start, end),
           position: start,
-          isConnected: false,
         },
         {
           direction: this.positionToExitDirection(end, start),
           position: end,
-          isConnected: false,
         },
       ],
       path,
@@ -278,17 +276,14 @@ export class CorridorGenerator {
         {
           direction: ExitDirection.North,
           position: { x: position.x, y: position.y - 1 },
-          isConnected: false,
         },
         {
           direction: ExitDirection.East,
           position: { x: position.x + 1, y: position.y },
-          isConnected: false,
         },
         {
           direction: ExitDirection.West,
           position: { x: position.x - 1, y: position.y },
-          isConnected: false,
         },
       ],
       path: [position],
@@ -307,22 +302,18 @@ export class CorridorGenerator {
         {
           direction: ExitDirection.North,
           position: { x: position.x, y: position.y - 1 },
-          isConnected: false,
         },
         {
           direction: ExitDirection.South,
           position: { x: position.x, y: position.y + 1 },
-          isConnected: false,
         },
         {
           direction: ExitDirection.East,
           position: { x: position.x + 1, y: position.y },
-          isConnected: false,
         },
         {
           direction: ExitDirection.West,
           position: { x: position.x - 1, y: position.y },
-          isConnected: false,
         },
       ],
       path: [position],
