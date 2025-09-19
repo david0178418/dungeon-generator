@@ -10,6 +10,7 @@ import {
   Divider,
 } from '@mui/material';
 import { GenerationSettings } from '../types';
+import { GENERATION_LIMITS } from '../constants';
 
 interface GenerationControlsProps {
   onGenerate: (settings: GenerationSettings) => void;
@@ -57,7 +58,7 @@ export const GenerationControls: React.FC<GenerationControlsProps> = ({
           type="number"
           value={settings.minRooms}
           onChange={(e) => handleSettingChange('minRooms', parseInt(e.target.value) || 1)}
-          inputProps={{ min: 1, max: 50 }}
+          inputProps={{ min: GENERATION_LIMITS.MIN_ROOMS_LIMIT, max: GENERATION_LIMITS.MAX_ROOMS_LIMIT }}
           fullWidth
           size="small"
         />
@@ -67,7 +68,7 @@ export const GenerationControls: React.FC<GenerationControlsProps> = ({
           type="number"
           value={settings.maxRooms}
           onChange={(e) => handleSettingChange('maxRooms', parseInt(e.target.value) || 1)}
-          inputProps={{ min: 1, max: 50 }}
+          inputProps={{ min: GENERATION_LIMITS.MIN_ROOMS_LIMIT, max: GENERATION_LIMITS.MAX_ROOMS_LIMIT }}
           fullWidth
           size="small"
         />
@@ -77,7 +78,7 @@ export const GenerationControls: React.FC<GenerationControlsProps> = ({
           type="number"
           value={settings.gridSize}
           onChange={(e) => handleSettingChange('gridSize', parseInt(e.target.value) || 20)}
-          inputProps={{ min: 20, max: 50 }}
+          inputProps={{ min: GENERATION_LIMITS.MIN_GRID_SIZE, max: GENERATION_LIMITS.MAX_GRID_SIZE }}
           fullWidth
           size="small"
           helperText="Grid squares (20-50)"
@@ -88,7 +89,7 @@ export const GenerationControls: React.FC<GenerationControlsProps> = ({
           type="number"
           value={settings.roomSpacing}
           onChange={(e) => handleSettingChange('roomSpacing', parseInt(e.target.value) || 1)}
-          inputProps={{ min: 1, max: 5 }}
+          inputProps={{ min: GENERATION_LIMITS.MIN_ROOM_SPACING, max: GENERATION_LIMITS.MAX_ROOM_SPACING }}
           fullWidth
           size="small"
           helperText="Grid squares between rooms"
@@ -99,7 +100,7 @@ export const GenerationControls: React.FC<GenerationControlsProps> = ({
           type="number"
           value={settings.maxExitsPerRoom}
           onChange={(e) => handleSettingChange('maxExitsPerRoom', parseInt(e.target.value) || 1)}
-          inputProps={{ min: 1, max: 8 }}
+          inputProps={{ min: GENERATION_LIMITS.MIN_ROOMS_LIMIT, max: GENERATION_LIMITS.MAX_EXITS_LIMIT }}
           fullWidth
           size="small"
         />

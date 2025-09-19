@@ -3,6 +3,13 @@ import { Box, Paper } from '@mui/material';
 import { DungeonMap, Room, Corridor, ConnectionPoint, RoomType, ExteriorDoor } from '../types';
 import { getRoomTemplateById } from '../data/roomTemplates';
 import { isConnectionPointConnected } from '../utils/connectionHelpers';
+import {
+  calculateDoorDimensions,
+  generateGridPath,
+  generateDarkGridPath,
+  calculateRoomCenter
+} from '../utils/renderingHelpers';
+import { RENDERING, COLORS } from '../constants';
 
 interface DungeonCanvasProps {
   dungeonMap: DungeonMap | null;
@@ -28,14 +35,14 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
 
     // Define colors based on selection state
     const colors = {
-      fill: isSelected ? '#e3f2fd' : '#f8f8f8',
-      stroke: isSelected ? '#2196f3' : '#000',
-      strokeWidth: isSelected ? 3 : 2
+      fill: isSelected ? '#e3f2fd' : COLORS.ROOM_FILL,
+      stroke: isSelected ? COLORS.ROOM_SELECTED : COLORS.ROOM_STROKE,
+      strokeWidth: isSelected ? RENDERING.SELECTED_STROKE_WIDTH : RENDERING.ROOM_STROKE_WIDTH
     };
     let roomElements: React.ReactElement[] = [];
     
     if (template) {
-      // Render using template grid pattern
+      // Render room squares with light inner grid lines
       for (let row = 0; row < template.gridPattern.length; row++) {
         for (let col = 0; col < template.gridPattern[row].length; col++) {
           if (template.gridPattern[row][col]) {
@@ -47,12 +54,84 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
                 width={gridSquareSize}
                 height={gridSquareSize}
                 fill={colors.fill}
-                stroke={colors.stroke}
-                strokeWidth={colors.strokeWidth}
+                stroke={COLORS.ROOM_INNER_GRID}
+                strokeWidth={0.5}
                 style={{ cursor: 'pointer' }}
                 onClick={() => onRoomSelect(room.id)}
               />
             );
+          }
+        }
+      }
+
+      // Draw thick black outer wall edges
+      for (let row = 0; row < template.gridPattern.length; row++) {
+        for (let col = 0; col < template.gridPattern[row].length; col++) {
+          if (template.gridPattern[row][col]) {
+            const squareX = x + col * gridSquareSize;
+            const squareY = y + row * gridSquareSize;
+
+            // Check each edge and draw thick line if it's an outer wall
+
+            // Top edge - if no room square above
+            if (row === 0 || !template.gridPattern[row - 1]?.[col]) {
+              roomElements.push(
+                <line
+                  key={`${room.id}-top-${row}-${col}`}
+                  x1={squareX}
+                  y1={squareY}
+                  x2={squareX + gridSquareSize}
+                  y2={squareY}
+                  stroke={colors.stroke}
+                  strokeWidth={colors.strokeWidth}
+                />
+              );
+            }
+
+            // Bottom edge - if no room square below
+            if (row === template.gridPattern.length - 1 || !template.gridPattern[row + 1]?.[col]) {
+              roomElements.push(
+                <line
+                  key={`${room.id}-bottom-${row}-${col}`}
+                  x1={squareX}
+                  y1={squareY + gridSquareSize}
+                  x2={squareX + gridSquareSize}
+                  y2={squareY + gridSquareSize}
+                  stroke={colors.stroke}
+                  strokeWidth={colors.strokeWidth}
+                />
+              );
+            }
+
+            // Left edge - if no room square to the left
+            if (col === 0 || !template.gridPattern[row]?.[col - 1]) {
+              roomElements.push(
+                <line
+                  key={`${room.id}-left-${row}-${col}`}
+                  x1={squareX}
+                  y1={squareY}
+                  x2={squareX}
+                  y2={squareY + gridSquareSize}
+                  stroke={colors.stroke}
+                  strokeWidth={colors.strokeWidth}
+                />
+              );
+            }
+
+            // Right edge - if no room square to the right
+            if (col === template.gridPattern[row].length - 1 || !template.gridPattern[row]?.[col + 1]) {
+              roomElements.push(
+                <line
+                  key={`${room.id}-right-${row}-${col}`}
+                  x1={squareX + gridSquareSize}
+                  y1={squareY}
+                  x2={squareX + gridSquareSize}
+                  y2={squareY + gridSquareSize}
+                  stroke={colors.stroke}
+                  strokeWidth={colors.strokeWidth}
+                />
+              );
+            }
           }
         }
       }
@@ -80,20 +159,19 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
     ) || [];
 
     // Add room number
-    const centerX = x + (room.width * gridSquareSize) / 2;
-    const centerY = y + (room.height * gridSquareSize) / 2;
+    const center = calculateRoomCenter(x, y, room.width, room.height, gridSquareSize);
 
     return (
       <g key={room.id}>
         {roomElements}
         {doors}
         <text
-          x={centerX}
-          y={centerY}
+          x={center.x}
+          y={center.y}
           textAnchor="middle"
           dominantBaseline="central"
           fontSize={Math.max(10, gridSquareSize / 3)}
-          fill="#000"
+          fill={COLORS.TEXT_FILL}
           fontWeight="bold"
           pointerEvents="none"
         >
@@ -104,69 +182,20 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
   };
 
   const renderDoor = (roomId: string, cp: ConnectionPoint, index: number, gridSquareSize: number) => {
-    // Calculate door position centered on the edge of the specific grid cell
-    let doorWidth, doorHeight, doorX, doorY;
-    
-    // Get the cell position
-    const cellX = cp.position.x * gridSquareSize;
-    const cellY = cp.position.y * gridSquareSize;
-    
-    switch (cp.direction) {
-      case 'north':
-        // Door centered on top edge of the cell
-        doorWidth = gridSquareSize * 0.6;
-        doorHeight = gridSquareSize * 0.2;
-        doorX = cellX + (gridSquareSize - doorWidth) / 2;
-        doorY = cellY - doorHeight / 2;
-        break;
-      case 'south':
-        // Door centered on bottom edge of the cell
-        doorWidth = gridSquareSize * 0.6;
-        doorHeight = gridSquareSize * 0.2;
-        doorX = cellX + (gridSquareSize - doorWidth) / 2;
-        doorY = cellY + gridSquareSize - doorHeight / 2;
-        break;
-      case 'east':
-        // Door centered on right edge of the cell
-        doorWidth = gridSquareSize * 0.2;
-        doorHeight = gridSquareSize * 0.6;
-        doorX = cellX + gridSquareSize - doorWidth / 2;
-        doorY = cellY + (gridSquareSize - doorHeight) / 2;
-        break;
-      case 'west':
-        // Door centered on left edge of the cell
-        doorWidth = gridSquareSize * 0.2;
-        doorHeight = gridSquareSize * 0.6;
-        doorX = cellX - doorWidth / 2;
-        doorY = cellY + (gridSquareSize - doorHeight) / 2;
-        break;
-      default:
-        // Default centered door
-        doorWidth = gridSquareSize * 0.3;
-        doorHeight = gridSquareSize * 0.3;
-        doorX = cellX + (gridSquareSize - doorWidth) / 2;
-        doorY = cellY + (gridSquareSize - doorHeight) / 2;
-    }
+    const doorDims = calculateDoorDimensions(cp, gridSquareSize);
 
-    // Create door with appropriate styling
-    const doorElements = [];
-    
-    // Main door opening (white fill)
-    doorElements.push(
+    return (
       <rect
         key={`${roomId}-door-${index}`}
-        x={doorX}
-        y={doorY}
-        width={doorWidth}
-        height={doorHeight}
-        fill="#fff"
-        stroke="#000"
-        strokeWidth={1.5}
+        x={doorDims.x}
+        y={doorDims.y}
+        width={doorDims.width}
+        height={doorDims.height}
+        fill={COLORS.ROOM_FILL}
+        stroke={COLORS.ROOM_STROKE}
+        strokeWidth={RENDERING.STROKE_WIDTH + 0.5}
       />
     );
-    
-    
-    return <g key={`${roomId}-door-group-${index}`}>{doorElements}</g>;
   };
 
   const renderCorridor = (corridor: Corridor) => {
@@ -181,9 +210,9 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
           y={pos.y * gridSquareSize}
           width={gridSquareSize}
           height={gridSquareSize}
-          fill="#e0e0e0"
-          stroke="#666"
-          strokeWidth={1}
+          fill={COLORS.CORRIDOR_FILL}
+          stroke={COLORS.CORRIDOR_STROKE}
+          strokeWidth={RENDERING.STROKE_WIDTH}
         />
       );
     });
