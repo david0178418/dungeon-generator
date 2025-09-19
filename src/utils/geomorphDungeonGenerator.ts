@@ -65,27 +65,109 @@ export class GeomorphDungeonGenerator {
   private createExteriorEntrance(): void {
     if (this.rooms.length === 0) return;
 
-    // Find a room near an edge to connect the entrance to
-    const edgeRooms = this.findRoomsNearEdges();
+    // Find rooms that can be connected from map edges
+    const connectableRooms = this.findConnectableRooms();
 
-    if (edgeRooms.length === 0) return;
-
-    // Pick a random room near an edge
-    const targetRoom = edgeRooms[Math.floor(Math.random() * edgeRooms.length)];
-
-    // Find the best edge position for the entrance
-    const entrancePosition = this.findBestEntrancePosition(targetRoom);
-
-    if (entrancePosition) {
-      this.entranceDoor = {
-        position: entrancePosition.position,
-        direction: entrancePosition.direction,
-        connectedElementId: targetRoom.id,
-      };
-
-      // Create a corridor from the entrance to the room if needed
-      this.connectEntranceToRoom(this.entranceDoor, targetRoom);
+    if (connectableRooms.length === 0) {
+      // Fallback: use any room if no "connectable" rooms found
+      const allRooms = [...this.rooms];
+      if (allRooms.length > 0) {
+        this.createEntranceWithFallback(allRooms);
+      }
+      return;
     }
+
+    // Try to create entrance with connectable rooms first
+    for (const roomInfo of connectableRooms) {
+      if (this.tryCreateEntranceForRoom(roomInfo.room, roomInfo.entrancePositions)) {
+        return; // Success!
+      }
+    }
+
+    // If all connectable rooms failed, try fallback
+    this.createEntranceWithFallback([...this.rooms]);
+  }
+
+  private findConnectableRooms(): Array<{ room: Room; entrancePositions: Array<{ position: Position; direction: ExitDirection }> }> {
+    const results: Array<{ room: Room; entrancePositions: Array<{ position: Position; direction: ExitDirection }> }> = [];
+
+    for (const room of this.rooms) {
+      const entrancePositions = this.findViableEntrancePositions(room);
+      if (entrancePositions.length > 0) {
+        results.push({ room, entrancePositions });
+      }
+    }
+
+    // Sort by number of viable entrance positions (more options = better)
+    results.sort((a, b) => b.entrancePositions.length - a.entrancePositions.length);
+    return results;
+  }
+
+  private findViableEntrancePositions(room: Room): Array<{ position: Position; direction: ExitDirection }> {
+    const positions: Array<{ position: Position; direction: ExitDirection }> = [];
+    const roomCenter = {
+      x: room.position.x + Math.floor(room.width / 2),
+      y: room.position.y + Math.floor(room.height / 2)
+    };
+
+    // Check all four edges of the map
+    const edgeChecks = [
+      { edge: 'north', pos: { x: roomCenter.x, y: 0 }, dir: ExitDirection.South },
+      { edge: 'south', pos: { x: roomCenter.x, y: this.settings.gridSize - 1 }, dir: ExitDirection.North },
+      { edge: 'east', pos: { x: this.settings.gridSize - 1, y: roomCenter.y }, dir: ExitDirection.West },
+      { edge: 'west', pos: { x: 0, y: roomCenter.y }, dir: ExitDirection.East },
+    ];
+
+    for (const check of edgeChecks) {
+      // Ensure the position is within bounds
+      check.pos.x = Math.max(0, Math.min(this.settings.gridSize - 1, check.pos.x));
+      check.pos.y = Math.max(0, Math.min(this.settings.gridSize - 1, check.pos.y));
+
+      // Quick distance check - if too far, skip expensive pathfinding
+      const distance = this.calculateDistance(check.pos, roomCenter);
+      if (distance > this.settings.gridSize * 0.7) continue; // Skip if more than 70% of map size
+
+      // Test if pathfinding would likely succeed (simple line-of-sight check)
+      if (this.hasReasonablePath(check.pos, room)) {
+        positions.push({ position: check.pos, direction: check.dir });
+      }
+    }
+
+    return positions;
+  }
+
+  private hasReasonablePath(from: Position, to: Room): boolean {
+    // Simple heuristic: check if there's a reasonable path
+    // This is much faster than full pathfinding but gives a good estimate
+    const roomCenter = {
+      x: to.position.x + Math.floor(to.width / 2),
+      y: to.position.y + Math.floor(to.height / 2)
+    };
+
+    // Check major obstacles along a straight line
+    const dx = roomCenter.x - from.x;
+    const dy = roomCenter.y - from.y;
+    const steps = Math.max(Math.abs(dx), Math.abs(dy));
+
+    if (steps === 0) return true;
+
+    let blockedCount = 0;
+    const maxBlockedAllowed = Math.floor(steps * 0.3); // Allow up to 30% blocked
+
+    for (let i = 1; i < steps; i++) {
+      const t = i / steps;
+      const checkX = Math.round(from.x + dx * t);
+      const checkY = Math.round(from.y + dy * t);
+
+      if (this.occupiedPositions.has(`${checkX},${checkY}`)) {
+        blockedCount++;
+        if (blockedCount > maxBlockedAllowed) {
+          return false;
+        }
+      }
+    }
+
+    return true;
   }
 
   private findRoomsNearEdges(): Room[] {
@@ -127,14 +209,207 @@ export class GeomorphDungeonGenerator {
     return candidates.length > 0 ? candidates[0] : null;
   }
 
-  private connectEntranceToRoom(entrance: ExteriorDoor, targetRoom: Room): void {
-    // Find the closest connection point on the target room
+  private tryCreateEntranceForRoom(room: Room, entrancePositions: Array<{ position: Position; direction: ExitDirection }>): boolean {
+    // Try each entrance position until one works
+    for (const entrancePos of entrancePositions) {
+      if (this.attemptEntranceConnection(room, entrancePos.position, entrancePos.direction)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private attemptEntranceConnection(room: Room, entrancePosition: Position, direction: ExitDirection): boolean {
+    // Find the closest connection point on the room
+    const closestConnectionPoint = this.findClosestConnectionPoint(room, entrancePosition);
+
+    if (!closestConnectionPoint) return false;
+
+    // Try to create a corridor
+    const corridorSegments = this.corridorGenerator.generateCorridor(
+      entrancePosition,
+      closestConnectionPoint.position
+    );
+
+    // Check if pathfinding succeeded
+    if (corridorSegments.length === 0) {
+      return false; // Pathfinding failed
+    }
+
+    // Success! Create the entrance
+    this.entranceDoor = {
+      position: entrancePosition,
+      direction: direction,
+      connectedElementId: room.id,
+    };
+
+    this.corridors.push(...corridorSegments);
+
+    // Mark connection point as connected if it wasn't already
+    if (!closestConnectionPoint.isConnected) {
+      closestConnectionPoint.isConnected = true;
+    }
+
+    return true;
+  }
+
+  private createEntranceWithFallback(rooms: Room[]): void {
+    // Last resort: try to force a connection with the closest room
+    let closestRoom: Room | null = null;
+    let closestDistance = Infinity;
+
+    // Find the room closest to any map edge
+    for (const room of rooms) {
+      const roomCenter = {
+        x: room.position.x + Math.floor(room.width / 2),
+        y: room.position.y + Math.floor(room.height / 2)
+      };
+
+      // Check distance to all edges
+      const distances = [
+        roomCenter.y, // distance to north edge
+        this.settings.gridSize - 1 - roomCenter.y, // distance to south edge
+        roomCenter.x, // distance to west edge
+        this.settings.gridSize - 1 - roomCenter.x, // distance to east edge
+      ];
+
+      const minDistanceToEdge = Math.min(...distances);
+      if (minDistanceToEdge < closestDistance) {
+        closestDistance = minDistanceToEdge;
+        closestRoom = room;
+      }
+    }
+
+    if (!closestRoom) return;
+
+    // Force create an entrance close to this room
+    const roomCenter = {
+      x: closestRoom.position.x + Math.floor(closestRoom.width / 2),
+      y: closestRoom.position.y + Math.floor(closestRoom.height / 2)
+    };
+
+    // Find the closest edge and create entrance there
+    const edgeOptions = [
+      { pos: { x: roomCenter.x, y: 0 }, dir: ExitDirection.South },
+      { pos: { x: roomCenter.x, y: this.settings.gridSize - 1 }, dir: ExitDirection.North },
+      { pos: { x: 0, y: roomCenter.y }, dir: ExitDirection.East },
+      { pos: { x: this.settings.gridSize - 1, y: roomCenter.y }, dir: ExitDirection.West },
+    ];
+
+    // Sort by distance to room center
+    edgeOptions.sort((a, b) => {
+      const distA = this.calculateDistance(a.pos, roomCenter);
+      const distB = this.calculateDistance(b.pos, roomCenter);
+      return distA - distB;
+    });
+
+    // Create entrance at closest edge
+    const bestEdge = edgeOptions[0];
+    this.entranceDoor = {
+      position: bestEdge.pos,
+      direction: bestEdge.dir,
+      connectedElementId: closestRoom.id,
+    };
+
+    // Force create a connection (may create overlapping corridors, but ensures connection)
+    this.forceEntranceConnection(this.entranceDoor, closestRoom);
+  }
+
+  private forceEntranceConnection(entrance: ExteriorDoor, room: Room): void {
+    // This is a fallback that creates a direct connection, possibly overlapping other elements
+    const closestConnectionPoint = this.findClosestConnectionPoint(room, entrance.position);
+
+    if (!closestConnectionPoint) return;
+
+    // Create a simple direct corridor (may overlap, but ensures connection)
+    const start = entrance.position;
+    const end = closestConnectionPoint.position;
+
+    // Create corridor segments in a simple L-shape
+    const corridorSegments: Corridor[] = [];
+
+    if (start.x !== end.x) {
+      // Horizontal segment
+      const horizontalId = `corridor-entrance-h-${Date.now()}`;
+      corridorSegments.push({
+        id: horizontalId,
+        type: 'straight',
+        direction: 'horizontal',
+        position: { x: Math.min(start.x, end.x), y: start.y },
+        length: Math.abs(end.x - start.x) + 1,
+        width: 1,
+        connectionPoints: [],
+        path: this.createLinearPath(
+          { x: start.x, y: start.y },
+          { x: end.x, y: start.y }
+        )
+      });
+    }
+
+    if (start.y !== end.y) {
+      // Vertical segment
+      const verticalId = `corridor-entrance-v-${Date.now()}`;
+      corridorSegments.push({
+        id: verticalId,
+        type: 'straight',
+        direction: 'vertical',
+        position: { x: end.x, y: Math.min(start.y, end.y) },
+        length: Math.abs(end.y - start.y) + 1,
+        width: 1,
+        connectionPoints: [],
+        path: this.createLinearPath(
+          { x: end.x, y: start.y },
+          { x: end.x, y: end.y }
+        )
+      });
+    }
+
+    this.corridors.push(...corridorSegments);
+
+    if (!closestConnectionPoint.isConnected) {
+      closestConnectionPoint.isConnected = true;
+    }
+  }
+
+  private createLinearPath(start: Position, end: Position): Position[] {
+    const path: Position[] = [];
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const steps = Math.max(Math.abs(dx), Math.abs(dy));
+
+    for (let i = 0; i <= steps; i++) {
+      const t = steps > 0 ? i / steps : 0;
+      path.push({
+        x: Math.round(start.x + dx * t),
+        y: Math.round(start.y + dy * t)
+      });
+    }
+
+    return path;
+  }
+
+  private findClosestConnectionPoint(room: Room, position: Position): ConnectionPoint | null {
     let closestConnectionPoint: ConnectionPoint | null = null;
     let minDistance = Infinity;
+    let foundUnconnected = false;
 
-    for (const cp of targetRoom.connectionPoints) {
+    // First pass: try to find an unconnected connection point
+    for (const cp of room.connectionPoints) {
       if (!cp.isConnected) {
-        const distance = this.calculateDistance(entrance.position, cp.position);
+        const distance = this.calculateDistance(position, cp.position);
+        if (distance < minDistance) {
+          minDistance = distance;
+          closestConnectionPoint = cp;
+          foundUnconnected = true;
+        }
+      }
+    }
+
+    // Second pass: if no unconnected points, use the closest connected one
+    if (!foundUnconnected) {
+      minDistance = Infinity;
+      for (const cp of room.connectionPoints) {
+        const distance = this.calculateDistance(position, cp.position);
         if (distance < minDistance) {
           minDistance = distance;
           closestConnectionPoint = cp;
@@ -142,14 +417,24 @@ export class GeomorphDungeonGenerator {
       }
     }
 
-    // If we found a connection point, create a corridor
-    if (closestConnectionPoint) {
-      const corridorSegments = this.corridorGenerator.generateCorridor(
-        entrance.position,
-        closestConnectionPoint.position
-      );
+    return closestConnectionPoint;
+  }
 
-      this.corridors.push(...corridorSegments);
+  private connectEntranceToRoom(entrance: ExteriorDoor, targetRoom: Room): void {
+    // This method is now deprecated in favor of the new connection system
+    // But keeping it for backward compatibility if called directly
+    const closestConnectionPoint = this.findClosestConnectionPoint(targetRoom, entrance.position);
+
+    if (!closestConnectionPoint) return;
+
+    const corridorSegments = this.corridorGenerator.generateCorridor(
+      entrance.position,
+      closestConnectionPoint.position
+    );
+
+    this.corridors.push(...corridorSegments);
+
+    if (!closestConnectionPoint.isConnected) {
       closestConnectionPoint.isConnected = true;
     }
   }
