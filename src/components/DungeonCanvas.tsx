@@ -201,7 +201,10 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
   const renderCorridor = (corridor: Corridor) => {
     const elements: React.ReactElement[] = [];
 
-    // Render corridor path
+    // Create a set for fast lookup of corridor positions
+    const corridorPositions = new Set(corridor.path.map(pos => `${pos.x},${pos.y}`));
+
+    // Render corridor squares with light inner grid lines
     corridor.path.forEach((pos, index) => {
       elements.push(
         <rect
@@ -211,10 +214,78 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
           width={gridSquareSize}
           height={gridSquareSize}
           fill={COLORS.CORRIDOR_FILL}
-          stroke={COLORS.CORRIDOR_STROKE}
-          strokeWidth={RENDERING.STROKE_WIDTH}
+          stroke={COLORS.ROOM_INNER_GRID}
+          strokeWidth={0.5}
         />
       );
+    });
+
+    // Draw thick outer wall edges for corridor
+    corridor.path.forEach((pos, index) => {
+      const squareX = pos.x * gridSquareSize;
+      const squareY = pos.y * gridSquareSize;
+
+      // Check each edge and draw thick line if it's an outer wall
+
+      // Top edge - if no corridor square above
+      if (!corridorPositions.has(`${pos.x},${pos.y - 1}`)) {
+        elements.push(
+          <line
+            key={`${corridor.id}-top-${index}`}
+            x1={squareX}
+            y1={squareY}
+            x2={squareX + gridSquareSize}
+            y2={squareY}
+            stroke={COLORS.CORRIDOR_STROKE}
+            strokeWidth={RENDERING.STROKE_WIDTH}
+          />
+        );
+      }
+
+      // Bottom edge - if no corridor square below
+      if (!corridorPositions.has(`${pos.x},${pos.y + 1}`)) {
+        elements.push(
+          <line
+            key={`${corridor.id}-bottom-${index}`}
+            x1={squareX}
+            y1={squareY + gridSquareSize}
+            x2={squareX + gridSquareSize}
+            y2={squareY + gridSquareSize}
+            stroke={COLORS.CORRIDOR_STROKE}
+            strokeWidth={RENDERING.STROKE_WIDTH}
+          />
+        );
+      }
+
+      // Left edge - if no corridor square to the left
+      if (!corridorPositions.has(`${pos.x - 1},${pos.y}`)) {
+        elements.push(
+          <line
+            key={`${corridor.id}-left-${index}`}
+            x1={squareX}
+            y1={squareY}
+            x2={squareX}
+            y2={squareY + gridSquareSize}
+            stroke={COLORS.CORRIDOR_STROKE}
+            strokeWidth={RENDERING.STROKE_WIDTH}
+          />
+        );
+      }
+
+      // Right edge - if no corridor square to the right
+      if (!corridorPositions.has(`${pos.x + 1},${pos.y}`)) {
+        elements.push(
+          <line
+            key={`${corridor.id}-right-${index}`}
+            x1={squareX + gridSquareSize}
+            y1={squareY}
+            x2={squareX + gridSquareSize}
+            y2={squareY + gridSquareSize}
+            stroke={COLORS.CORRIDOR_STROKE}
+            strokeWidth={RENDERING.STROKE_WIDTH}
+          />
+        );
+      }
     });
 
     return <g key={corridor.id}>{elements}</g>;
