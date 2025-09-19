@@ -89,11 +89,18 @@ export interface Corridor {
   path: Position[];
 }
 
+export interface ExteriorDoor {
+  position: Position;
+  direction: ExitDirection;
+  connectedElementId?: string; // ID of the room or corridor it connects to
+}
+
 export interface DungeonMap {
   id: string;
   name: string;
   rooms: Room[];
   corridors: Corridor[];
+  entranceDoor?: ExteriorDoor;
   createdAt: Date;
   gridSize: number;
   totalRooms: number;

@@ -7,6 +7,8 @@ import {
   RoomType,
   ConnectionPoint,
   RoomTemplate,
+  ExteriorDoor,
+  ExitDirection,
 } from '../types';
 import { CorridorGenerator } from './corridorGenerator';
 import {
@@ -19,6 +21,7 @@ export class GeomorphDungeonGenerator {
   private settings: GenerationSettings;
   private rooms: Room[] = [];
   private corridors: Corridor[] = [];
+  private entranceDoor: ExteriorDoor | undefined;
   private corridorGenerator: CorridorGenerator;
   private occupiedPositions: Set<string> = new Set();
 
@@ -29,26 +32,27 @@ export class GeomorphDungeonGenerator {
 
   generateDungeon(): DungeonMap {
     this.reset();
-    
-    // Step 1: Generate entrance room
-    this.generateEntranceRoom();
-    
-    // Step 2: Generate main rooms
+
+    // Step 1: Generate main rooms (no entrance room)
     const targetRoomCount = this.determineRoomCount();
-    this.generateMainRooms(targetRoomCount - 1); // -1 for entrance
-    
-    // Step 3: Connect rooms with corridors
+    this.generateMainRooms(targetRoomCount);
+
+    // Step 2: Connect rooms with corridors
     this.connectRoomsWithCorridors();
-    
-    // Step 4: Add some dead-end corridors for exploration
+
+    // Step 3: Add some dead-end corridors for exploration
     this.addExplorationCorridors();
-    
+
+    // Step 4: Create exterior entrance door
+    this.createExteriorEntrance();
+
     return this.createDungeonMap();
   }
 
   private reset(): void {
     this.rooms = [];
     this.corridors = [];
+    this.entranceDoor = undefined;
     this.occupiedPositions.clear();
     this.corridorGenerator = new CorridorGenerator(this.settings.gridSize);
   }
@@ -58,26 +62,103 @@ export class GeomorphDungeonGenerator {
     return minRooms + Math.floor(Math.random() * (maxRooms - minRooms + 1));
   }
 
-  private generateEntranceRoom(): void {
-    const entranceTemplates = getRoomTemplatesByType(RoomType.Entrance);
-    const template = entranceTemplates[Math.floor(Math.random() * entranceTemplates.length)];
-    
-    // Place entrance room near the edge of the grid
-    const position: Position = {
-      x: Math.floor(this.settings.gridSize * 0.1),
-      y: Math.floor(this.settings.gridSize * 0.1),
-    };
-    
-    const room = this.createRoomFromTemplate(template, position);
-    this.rooms.push(room);
-    this.markRoomAsOccupied(room);
+  private createExteriorEntrance(): void {
+    if (this.rooms.length === 0) return;
+
+    // Find a room near an edge to connect the entrance to
+    const edgeRooms = this.findRoomsNearEdges();
+
+    if (edgeRooms.length === 0) return;
+
+    // Pick a random room near an edge
+    const targetRoom = edgeRooms[Math.floor(Math.random() * edgeRooms.length)];
+
+    // Find the best edge position for the entrance
+    const entrancePosition = this.findBestEntrancePosition(targetRoom);
+
+    if (entrancePosition) {
+      this.entranceDoor = {
+        position: entrancePosition.position,
+        direction: entrancePosition.direction,
+        connectedElementId: targetRoom.id,
+      };
+
+      // Create a corridor from the entrance to the room if needed
+      this.connectEntranceToRoom(this.entranceDoor, targetRoom);
+    }
+  }
+
+  private findRoomsNearEdges(): Room[] {
+    const edgeBuffer = 5; // Consider rooms within 5 squares of an edge as "near edge"
+    return this.rooms.filter(room => {
+      return room.position.x <= edgeBuffer ||
+             room.position.y <= edgeBuffer ||
+             room.position.x + room.width >= this.settings.gridSize - edgeBuffer ||
+             room.position.y + room.height >= this.settings.gridSize - edgeBuffer;
+    });
+  }
+
+  private findBestEntrancePosition(targetRoom: Room): { position: Position; direction: ExitDirection } | null {
+    const candidates: { position: Position; direction: ExitDirection; distance: number }[] = [];
+
+    // Check each edge of the map
+    const edges = [
+      { side: 'north', pos: { x: targetRoom.position.x + Math.floor(targetRoom.width / 2), y: 0 }, dir: ExitDirection.South },
+      { side: 'south', pos: { x: targetRoom.position.x + Math.floor(targetRoom.width / 2), y: this.settings.gridSize - 1 }, dir: ExitDirection.North },
+      { side: 'east', pos: { x: this.settings.gridSize - 1, y: targetRoom.position.y + Math.floor(targetRoom.height / 2) }, dir: ExitDirection.West },
+      { side: 'west', pos: { x: 0, y: targetRoom.position.y + Math.floor(targetRoom.height / 2) }, dir: ExitDirection.East },
+    ];
+
+    for (const edge of edges) {
+      const distance = this.calculateDistance(edge.pos, {
+        x: targetRoom.position.x + Math.floor(targetRoom.width / 2),
+        y: targetRoom.position.y + Math.floor(targetRoom.height / 2)
+      });
+
+      candidates.push({
+        position: edge.pos,
+        direction: edge.dir,
+        distance
+      });
+    }
+
+    // Return the closest edge position
+    candidates.sort((a, b) => a.distance - b.distance);
+    return candidates.length > 0 ? candidates[0] : null;
+  }
+
+  private connectEntranceToRoom(entrance: ExteriorDoor, targetRoom: Room): void {
+    // Find the closest connection point on the target room
+    let closestConnectionPoint: ConnectionPoint | null = null;
+    let minDistance = Infinity;
+
+    for (const cp of targetRoom.connectionPoints) {
+      if (!cp.isConnected) {
+        const distance = this.calculateDistance(entrance.position, cp.position);
+        if (distance < minDistance) {
+          minDistance = distance;
+          closestConnectionPoint = cp;
+        }
+      }
+    }
+
+    // If we found a connection point, create a corridor
+    if (closestConnectionPoint) {
+      const corridorSegments = this.corridorGenerator.generateCorridor(
+        entrance.position,
+        closestConnectionPoint.position
+      );
+
+      this.corridors.push(...corridorSegments);
+      closestConnectionPoint.isConnected = true;
+    }
   }
 
   private generateMainRooms(count: number): void {
     let attempts = 0;
     const maxAttempts = count * 10;
-    
-    while (this.rooms.length < count + 1 && attempts < maxAttempts) {
+
+    while (this.rooms.length < count && attempts < maxAttempts) {
       attempts++;
       
       const template = getRandomRoomTemplate(RoomType.Standard);
@@ -168,7 +249,7 @@ export class GeomorphDungeonGenerator {
 
     // Connect all rooms to ensure reachability
     const connectedRooms = new Set<string>();
-    connectedRooms.add(this.rooms[0].id); // Start with entrance
+    connectedRooms.add(this.rooms[0].id); // Start with first room
 
     // Connect each unconnected room to the nearest connected room
     while (connectedRooms.size < this.rooms.length) {
@@ -327,6 +408,7 @@ export class GeomorphDungeonGenerator {
       name: `Geomorph Dungeon ${new Date().toLocaleDateString()}`,
       rooms: this.rooms,
       corridors: this.corridors,
+      entranceDoor: this.entranceDoor,
       createdAt: new Date(),
       gridSize: this.settings.gridSize,
       totalRooms: this.rooms.length,

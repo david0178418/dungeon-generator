@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Paper } from '@mui/material';
-import { DungeonMap, Room, Corridor, ConnectionPoint } from '../types';
+import { DungeonMap, Room, Corridor, ConnectionPoint, RoomType, ExteriorDoor } from '../types';
 import { getRoomTemplateById } from '../data/roomTemplates';
 
 interface DungeonCanvasProps {
@@ -24,7 +24,13 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
 
     // Get room template for accurate rendering
     const template = room.templateId ? getRoomTemplateById(room.templateId) : null;
-    
+
+    // Define colors based on selection state
+    const colors = {
+      fill: isSelected ? '#e3f2fd' : '#f8f8f8',
+      stroke: isSelected ? '#2196f3' : '#000',
+      strokeWidth: isSelected ? 3 : 2
+    };
     let roomElements: React.ReactElement[] = [];
     
     if (template) {
@@ -39,9 +45,9 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
                 y={y + row * gridSquareSize}
                 width={gridSquareSize}
                 height={gridSquareSize}
-                fill={isSelected ? '#e3f2fd' : '#f8f8f8'}
-                stroke={isSelected ? '#2196f3' : '#000'}
-                strokeWidth={isSelected ? 3 : 2}
+                fill={colors.fill}
+                stroke={colors.stroke}
+                strokeWidth={colors.strokeWidth}
                 style={{ cursor: 'pointer' }}
                 onClick={() => onRoomSelect(room.id)}
               />
@@ -58,9 +64,9 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
           y={y}
           width={room.width * gridSquareSize}
           height={room.height * gridSquareSize}
-          fill={isSelected ? '#e3f2fd' : '#f8f8f8'}
-          stroke={isSelected ? '#2196f3' : '#000'}
-          strokeWidth={isSelected ? 3 : 2}
+          fill={colors.fill}
+          stroke={colors.stroke}
+          strokeWidth={colors.strokeWidth}
           style={{ cursor: 'pointer' }}
           onClick={() => onRoomSelect(room.id)}
         />
@@ -75,7 +81,7 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
     // Add room number
     const centerX = x + (room.width * gridSquareSize) / 2;
     const centerY = y + (room.height * gridSquareSize) / 2;
-    
+
     return (
       <g key={room.id}>
         {roomElements}
@@ -184,6 +190,74 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
     return <g key={corridor.id}>{elements}</g>;
   };
 
+  const renderExteriorEntrance = (entranceDoor: ExteriorDoor) => {
+    const x = entranceDoor.position.x * gridSquareSize;
+    const y = entranceDoor.position.y * gridSquareSize;
+
+    // Create a larger, more prominent door for the entrance
+    let doorWidth, doorHeight, doorX, doorY;
+
+    switch (entranceDoor.direction) {
+      case 'south': // Door faces south (into dungeon), so door is on north edge of square
+        doorWidth = gridSquareSize * 0.8;
+        doorHeight = gridSquareSize * 0.3;
+        doorX = x + (gridSquareSize - doorWidth) / 2;
+        doorY = y - doorHeight / 2;
+        break;
+      case 'north': // Door faces north (into dungeon), so door is on south edge of square
+        doorWidth = gridSquareSize * 0.8;
+        doorHeight = gridSquareSize * 0.3;
+        doorX = x + (gridSquareSize - doorWidth) / 2;
+        doorY = y + gridSquareSize - doorHeight / 2;
+        break;
+      case 'west': // Door faces west (into dungeon), so door is on east edge of square
+        doorWidth = gridSquareSize * 0.3;
+        doorHeight = gridSquareSize * 0.8;
+        doorX = x + gridSquareSize - doorWidth / 2;
+        doorY = y + (gridSquareSize - doorHeight) / 2;
+        break;
+      case 'east': // Door faces east (into dungeon), so door is on west edge of square
+        doorWidth = gridSquareSize * 0.3;
+        doorHeight = gridSquareSize * 0.8;
+        doorX = x - doorWidth / 2;
+        doorY = y + (gridSquareSize - doorHeight) / 2;
+        break;
+      default:
+        doorWidth = gridSquareSize * 0.4;
+        doorHeight = gridSquareSize * 0.4;
+        doorX = x + (gridSquareSize - doorWidth) / 2;
+        doorY = y + (gridSquareSize - doorHeight) / 2;
+    }
+
+    return (
+      <g key="exterior-entrance">
+        {/* Door opening */}
+        <rect
+          x={doorX}
+          y={doorY}
+          width={doorWidth}
+          height={doorHeight}
+          fill="#4caf50"
+          stroke="#2e7d32"
+          strokeWidth={3}
+        />
+        {/* "ENTRANCE" label */}
+        <text
+          x={x + gridSquareSize / 2}
+          y={y + gridSquareSize / 2}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fontSize={Math.max(8, gridSquareSize / 5)}
+          fill="#fff"
+          fontWeight="bold"
+          pointerEvents="none"
+        >
+          ENT
+        </text>
+      </g>
+    );
+  };
+
 
   return (
     <Paper elevation={3} sx={{ p: 2, height: canvasSize + 40, overflow: 'hidden' }}>
@@ -258,9 +332,12 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
             
             {/* Corridors (render first so rooms appear on top) */}
             {dungeonMap.corridors?.map(renderCorridor)}
-            
+
             {/* Rooms */}
             {dungeonMap.rooms.map(renderRoom)}
+
+            {/* Exterior entrance door */}
+            {dungeonMap.entranceDoor && renderExteriorEntrance(dungeonMap.entranceDoor)}
             
             {/* Grid coordinates overlay */}
             <g transform="translate(-15, -15)">
