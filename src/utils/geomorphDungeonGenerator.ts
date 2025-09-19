@@ -9,6 +9,8 @@ import {
   RoomTemplate,
   ExteriorDoor,
   ExitDirection,
+  CorridorType,
+  CorridorDirection,
 } from '../types';
 import { CorridorGenerator } from './corridorGenerator';
 import {
@@ -333,8 +335,8 @@ export class GeomorphDungeonGenerator {
       const horizontalId = `corridor-entrance-h-${Date.now()}`;
       corridorSegments.push({
         id: horizontalId,
-        type: 'straight',
-        direction: 'horizontal',
+        type: CorridorType.Straight,
+        direction: CorridorDirection.Horizontal,
         position: { x: Math.min(start.x, end.x), y: start.y },
         length: Math.abs(end.x - start.x) + 1,
         width: 1,
@@ -351,8 +353,8 @@ export class GeomorphDungeonGenerator {
       const verticalId = `corridor-entrance-v-${Date.now()}`;
       corridorSegments.push({
         id: verticalId,
-        type: 'straight',
-        direction: 'vertical',
+        type: CorridorType.Straight,
+        direction: CorridorDirection.Vertical,
         position: { x: end.x, y: Math.min(start.y, end.y) },
         length: Math.abs(end.y - start.y) + 1,
         width: 1,

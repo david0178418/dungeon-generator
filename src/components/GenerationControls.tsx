@@ -104,29 +104,6 @@ export const GenerationControls: React.FC<GenerationControlsProps> = ({
           size="small"
         />
         
-        <Box sx={{ gridColumn: { xs: '1', sm: '1 / -1' } }}>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={settings.allowIrregularRooms}
-                onChange={(e) => handleSettingChange('allowIrregularRooms', e.target.checked)}
-              />
-            }
-            label="Allow Irregular Rooms"
-          />
-        </Box>
-        
-        <Box sx={{ gridColumn: { xs: '1', sm: '1 / -1' } }}>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={settings.forceConnectivity}
-                onChange={(e) => handleSettingChange('forceConnectivity', e.target.checked)}
-              />
-            }
-            label="Force Room Connectivity"
-          />
-        </Box>
       </Box>
       
       <Divider sx={{ my: 3 }} />

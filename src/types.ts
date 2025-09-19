@@ -122,8 +122,6 @@ export interface GenerationSettings {
   maxRooms: number;
   minRooms: number;
   gridSize: number;
-  allowIrregularRooms: boolean;
-  forceConnectivity: boolean;
   maxExitsPerRoom: number;
   roomSpacing: number;
 }
