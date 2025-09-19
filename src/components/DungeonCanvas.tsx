@@ -67,8 +67,8 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
       );
     }
 
-    // Add doors (connection points as rectangles)
-    const doors = room.connectionPoints?.map((cp, index) => 
+    // Add doors (connection points as rectangles) - only for connected points
+    const doors = room.connectionPoints?.filter(cp => cp.isConnected).map((cp, index) =>
       renderDoor(room.id, cp, index, gridSquareSize)
     ) || [];
 
@@ -158,23 +158,6 @@ export const DungeonCanvas: React.FC<DungeonCanvasProps> = ({
       />
     );
     
-    // If unexplored (not connected), add visual indicator
-    if (!cp.isConnected) {
-      // Add a subtle pattern or different styling for unexplored doors
-      doorElements.push(
-        <rect
-          key={`${roomId}-door-unexplored-${index}`}
-          x={doorX + 1}
-          y={doorY + 1}
-          width={doorWidth - 2}
-          height={doorHeight - 2}
-          fill="none"
-          stroke="#999"
-          strokeWidth={1}
-          strokeDasharray="2,2"
-        />
-      );
-    }
     
     return <g key={`${roomId}-door-group-${index}`}>{doorElements}</g>;
   };
